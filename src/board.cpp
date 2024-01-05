@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <bit>
+
 #include "blokusduo.h"
 #include "piece.h"
 
@@ -21,6 +23,25 @@ class MoveCollector : public BoardImpl<Game>::MoveVisitor {
   }
   std::vector<Move> moves;
 };
+
+constexpr uint64_t shu8x8(uint64_t bits) { return bits << 8; }
+constexpr uint64_t shd8x8(uint64_t bits) { return bits >> 8; }
+
+constexpr uint64_t shl8x8(uint64_t bits) {
+  constexpr uint64_t mask =
+      0b01111111'01111111'01111111'01111111'01111111'01111111'01111111'01111111;
+  return (bits & mask) << 1;
+}
+
+constexpr uint64_t shr8x8(uint64_t bits) {
+  constexpr uint64_t mask =
+      0b01111111'01111111'01111111'01111111'01111111'01111111'01111111'01111111;
+  return (bits >> 1) & mask;
+}
+
+constexpr uint64_t inflate8x8(uint64_t bits) {
+  return bits | shu8x8(bits) | shd8x8(bits) | shl8x8(bits) | shr8x8(bits);
+}
 
 }  // namespace
 
@@ -269,14 +290,28 @@ int BoardImpl<Game>::eval_pieces() const {
 }
 
 template <>
-int BoardImpl<BlokusDuoMini>::eval_effect() const {
-  throw "Not implemented";
+int BoardImpl<BlokusDuoMini>::eval_influence() const {
+  uint64_t vtile = *reinterpret_cast<const uint64_t*>(key_.a[0]);
+  uint64_t otile = *reinterpret_cast<const uint64_t*>(key_.a[1]);
+  uint64_t vmask = ~(inflate8x8(vtile) | otile);
+  uint64_t omask = ~(inflate8x8(otile) | vtile);
+  uint64_t vinfl = (shu8x8(shl8x8(vtile)) | shd8x8(shl8x8(vtile)) |
+                    shu8x8(shr8x8(vtile)) | shd8x8(shr8x8(vtile))) &
+                   vmask;
+  uint64_t oinfl = (shu8x8(shl8x8(otile)) | shd8x8(shl8x8(otile)) |
+                    shu8x8(shr8x8(otile)) | shd8x8(shr8x8(otile))) &
+                   omask;
+  vinfl = inflate8x8(vinfl) & vmask;
+  vinfl = inflate8x8(vinfl) & vmask;
+  oinfl = inflate8x8(oinfl) & omask;
+  oinfl = inflate8x8(oinfl) & omask;
+  return std::popcount(vinfl) - std::popcount(oinfl);
 }
 
 template <>
-int BoardImpl<BlokusDuoStandard>::eval_effect() const {
+int BoardImpl<BlokusDuoStandard>::eval_influence() const {
   uint8_t b[16 * 15];
-  uint8_t *effects[2][YSIZE * XSIZE], **peff, **pnew_eff;
+  uint8_t *influences[2][YSIZE * XSIZE], **pinf, **pnew_inf;
   int score = 0;
 
   for (int x = 0; x <= XSIZE; x++) b[x] = VIOLET_TILE | ORANGE_TILE;
@@ -289,75 +324,75 @@ int BoardImpl<BlokusDuoStandard>::eval_effect() const {
                              ORANGE_MASK | VIOLET_TILE};
     const uint8_t corner[2] = {VIOLET_CORNER, ORANGE_CORNER};
 
-    peff = effects[0];
+    pinf = influences[0];
     for (int y = 0; y < YSIZE; y++) {
       for (int x = 0; x < XSIZE; x++) {
         b[(y + 1) * 15 + x] = at(x, y) & mask[player];
         if (b[(y + 1) * 15 + x] == corner[player]) {
-          *peff++ = &b[(y + 1) * 15 + x];
+          *pinf++ = &b[(y + 1) * 15 + x];
           score++;
         }
       }
     }
-    *peff = nullptr;
+    *pinf = nullptr;
 
-    peff = effects[0];
-    pnew_eff = effects[1];
-    while (*peff) {
-      uint8_t* pos = *peff++;
+    pinf = influences[0];
+    pnew_inf = influences[1];
+    while (*pinf) {
+      uint8_t* pos = *pinf++;
       if (pos[-15] == 0) {
         pos[-15] = 1;
-        *pnew_eff++ = pos - 15;
+        *pnew_inf++ = pos - 15;
         score++;
       }
       if (pos[-1] == 0) {
         pos[-1] = 1;
-        *pnew_eff++ = pos - 1;
+        *pnew_inf++ = pos - 1;
         score++;
       }
       if (pos[1] == 0) {
         pos[1] = 1;
-        *pnew_eff++ = pos + 1;
+        *pnew_inf++ = pos + 1;
         score++;
       }
       if (pos[15] == 0) {
         pos[15] = 1;
-        *pnew_eff++ = pos + 15;
+        *pnew_inf++ = pos + 15;
         score++;
       }
     }
-    *pnew_eff = nullptr;
+    *pnew_inf = nullptr;
 
-    peff = effects[1];
-    pnew_eff = effects[0];
-    while (*peff) {
-      uint8_t* pos = *peff++;
+    pinf = influences[1];
+    pnew_inf = influences[0];
+    while (*pinf) {
+      uint8_t* pos = *pinf++;
       if (pos[-15] == 0) {
         pos[-15] = 1;
-        *pnew_eff++ = pos - 15;
+        *pnew_inf++ = pos - 15;
         score++;
       }
       if (pos[-1] == 0) {
         pos[-1] = 1;
-        *pnew_eff++ = pos - 1;
+        *pnew_inf++ = pos - 1;
         score++;
       }
       if (pos[1] == 0) {
         pos[1] = 1;
-        *pnew_eff++ = pos + 1;
+        *pnew_inf++ = pos + 1;
         score++;
       }
       if (pos[15] == 0) {
         pos[15] = 1;
-        *pnew_eff++ = pos + 15;
+        *pnew_inf++ = pos + 15;
         score++;
       }
     }
-    *pnew_eff = nullptr;
+    *pnew_inf = nullptr;
 
-    peff = effects[0];
-    while (*peff) {
-      uint8_t* pos = *peff++;
+    pinf = influences[0];
+    while (*pinf) {
+      uint8_t* pos = *pinf++;
       if (pos[-15] == 0) {
         pos[-15] = 1;
         score++;

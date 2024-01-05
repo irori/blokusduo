@@ -218,7 +218,7 @@ class BoardImpl {
 
   // Heuristically evaluates the current board state. Higher values are better
   // for violet, lower values are better for orange.
-  int evaluate() const { return eval_pieces() + eval_effect(); }
+  int evaluate() const { return eval_pieces() + eval_influence(); }
 
   // Same as evaluate(), but higher values are better for the current player.
   int nega_eval() const { return is_violet_turn() ? evaluate() : -evaluate(); }
@@ -241,7 +241,7 @@ class BoardImpl {
 
   bool placeable(int px, int py, const Piece* piece) const noexcept;
   int eval_pieces() const;
-  int eval_effect() const;
+  int eval_influence() const;
 };
 
 namespace standard {

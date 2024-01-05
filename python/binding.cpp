@@ -60,6 +60,7 @@ void define_blokusduo_module(nb::module_&& m) {
       .def("play_move", &BoardImpl<Game>::play_move)
       .def("__str__", &BoardImpl<Game>::to_string)
       .def("score", &BoardImpl<Game>::score)
+      .def("evaluate", &BoardImpl<Game>::evaluate)
       .def_static("all_possible_moves", &BoardImpl<Game>::all_possible_moves);
   m.def("search_negascout", &blokusduo::search::negascout<Game>);
   m.def("search_wld", &blokusduo::search::wld<Game>);
