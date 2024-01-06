@@ -61,9 +61,29 @@ void test_move() {
     fail("33b6 should be canonicalized to 43b2, but got %s\n",
          canonical.fourcc().c_str());
   }
-  if (m.mirror() != Move("65f5")) {
-    fail("mirror of 56f2 should be 65f5, but got %s\n",
-         m.mirror().fourcc().c_str());
+
+  Move rotates_of_23f3[8] = {
+      Move("23f3"), Move("73f2"), Move("62f1"), Move("32f0"),
+      Move("76f7"), Move("26f6"), Move("37f5"), Move("67f4"),
+  };
+  for (int r = 0; r < 8; r++) {
+    Move actual = mini::Board::rotate_move(Move("23f3"), r);
+    if (actual != rotates_of_23f3[r]) {
+      fail("rotate_move(23f3, %d) should be %s, but got %s\n", r,
+           rotates_of_23f3[r].fourcc().c_str(), actual.fourcc().c_str());
+    }
+  }
+
+  Move rotates_of_34t0[8] = {
+      Move("34t0"), Move("C4t1"), Move("B3t2"), Move("43t3"),
+      Move("CBt4"), Move("3Bt5"), Move("4Ct6"), Move("BCt7"),
+  };
+  for (int r = 0; r < 8; r++) {
+    Move actual = standard::Board::rotate_move(Move("34t0"), r);
+    if (actual != rotates_of_34t0[r]) {
+      fail("rotate_move(34t0, %d) should be %s, but got %s\n", r,
+           rotates_of_34t0[r].fourcc().c_str(), actual.fourcc().c_str());
+    }
   }
 }
 

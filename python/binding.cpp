@@ -58,10 +58,12 @@ void define_blokusduo_module(nb::module_&& m) {
            })
       .def("valid_moves", &BoardImpl<Game>::valid_moves)
       .def("play_move", &BoardImpl<Game>::play_move)
+      .def("child", &BoardImpl<Game>::child)
       .def("__str__", &BoardImpl<Game>::to_string)
       .def("score", &BoardImpl<Game>::score)
       .def("evaluate", &BoardImpl<Game>::evaluate)
-      .def_static("all_possible_moves", &BoardImpl<Game>::all_possible_moves);
+      .def_static("all_possible_moves", &BoardImpl<Game>::all_possible_moves)
+      .def_static("rotate_move", &BoardImpl<Game>::rotate_move);
   m.def("search_negascout", &blokusduo::search::negascout<Game>);
   m.def("search_wld", &blokusduo::search::wld<Game>);
   m.def("search_perfect", &blokusduo::search::perfect<Game>);
@@ -81,8 +83,7 @@ NB_MODULE(blokusduo, m) {
       .def_prop_ro("piece", &Move::piece)
       .def_prop_ro("orientation", &Move::orientation)
       .def_prop_ro("is_pass", &Move::is_pass)
-      .def("canonicalize", &Move::canonicalize)
-      .def("mirror", &Move::mirror);
+      .def("canonicalize", &Move::canonicalize);
   define_blokusduo_module<BlokusDuoMini>(m.def_submodule("mini"));
   define_blokusduo_module<BlokusDuoStandard>(m.def_submodule("standard"));
 }

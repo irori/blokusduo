@@ -73,15 +73,6 @@ Move Move::canonicalize() const {
   return Move(new_x, new_y, rot.piece->id);
 }
 
-Move Move::mirror() const {
-  if (is_pass()) return Move::pass();
-  int d = (orientation() + (orientation() & 1 ? 5 : 3)) & 7;
-  auto& rot = block_set[piece_id()].rotations[d];
-  int new_x = y() + rot.offset_x;
-  int new_y = x() + rot.offset_y;
-  return Move(new_x, new_y, rot.piece->id);
-}
-
 template <class Game>
 BoardImpl<Game>::BoardImpl() {
   at(Game::START1X, Game::START1Y) = VIOLET_CORNER;
@@ -432,6 +423,51 @@ std::vector<Move> BoardImpl<Game>::all_possible_moves() {
   }
   moves.push_back(Move::pass());
   return moves;
+}
+
+// static
+template <class Game>
+Move BoardImpl<Game>::rotate_move(Move m, int rotation) {
+  if (m.is_pass()) return m;
+  m = m.canonicalize();
+  int x, y;
+  switch (rotation & 7) {
+    case 0:
+      x = m.x();
+      y = m.y();
+      break;
+    case 1:
+      x = XSIZE - 1 - m.x();
+      y = m.y();
+      break;
+    case 2:
+      x = XSIZE - 1 - m.y();
+      y = m.x();
+      break;
+    case 3:
+      x = m.y();
+      y = m.x();
+      break;
+    case 4:
+      x = XSIZE - 1 - m.x();
+      y = YSIZE - 1 - m.y();
+      break;
+    case 5:
+      x = m.x();
+      y = YSIZE - 1 - m.y();
+      break;
+    case 6:
+      x = m.y();
+      y = YSIZE - 1 - m.x();
+      break;
+    case 7:
+      x = XSIZE - 1 - m.y();
+      y = YSIZE - 1 - m.x();
+      break;
+  }
+  int orientation =
+      (m.orientation() + (m.orientation() & 1 ? 8 - rotation : rotation)) & 7;
+  return Move(x, y, m.piece_id() << 3 | orientation).canonicalize();
 }
 
 // explicit instantiation

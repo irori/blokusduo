@@ -31,7 +31,6 @@ class Move {
   bool operator<(const Move& rhs) const { return m_ < rhs.m_; }
   bool operator==(const Move& rhs) const { return m_ == rhs.m_; }
   bool operator!=(const Move& rhs) const { return m_ != rhs.m_; }
-  Move mirror() const;
 
   struct Hash {
     size_t operator()(Move key) const { return std::hash<uint16_t>{}(key.m_); }
@@ -226,6 +225,9 @@ class BoardImpl {
   // Generates a list of all possible moves that could be made in the game
   // (regardless of the current game state, as this method is static).
   static std::vector<Move> all_possible_moves();
+
+  // Rotate the move around the center of the board.
+  static Move rotate_move(Move move, int rotation);
 
  protected:
   static bool in_bounds(int x, int y) {
