@@ -4,6 +4,7 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -263,13 +264,11 @@ using SearchResult = std::pair<Move, short>;
 // value, so it accumulates across multiple calls to search functions.
 extern int visited_nodes;
 
-class Timeout {};
-
 template <class Game>
-SearchResult negascout(const BoardImpl<Game>& node, int max_depth, int stop_ms,
-                       int timeout_ms);
+SearchResult negascout(const BoardImpl<Game>& node, int max_depth,
+                       std::function<bool(int, SearchResult)> callback);
 template <class Game>
-SearchResult wld(const BoardImpl<Game>& node, int timeout_sec);
+SearchResult wld(const BoardImpl<Game>& node);
 template <class Game>
 SearchResult perfect(const BoardImpl<Game>& node);
 

@@ -1,7 +1,6 @@
 #include <assert.h>
 #include <limits.h>
 #include <stdio.h>
-#include <time.h>
 
 #include <algorithm>
 #include <array>
@@ -25,13 +24,6 @@ namespace blokusduo::search {
 int visited_nodes;
 
 namespace {
-
-#define CHECKPOINT_INTERVAL 10000
-
-static int check_point;
-static clock_t expire_clock;
-static bool enable_timeout;
-static bool timed_out;
 
 template <class Game>
 using Hash =
@@ -127,13 +119,7 @@ int negascout_rec(const BoardImpl<Game>& node, int depth, int alpha, int beta,
                   int hash_depth) {
   assert(alpha <= beta);
 
-  if (++visited_nodes >= check_point && enable_timeout) {
-    if ((int)(expire_clock - clock()) < 0) {
-      timed_out = true;
-      return 0;
-    }
-    check_point += CHECKPOINT_INTERVAL;
-  }
+  ++visited_nodes;
 
   if (depth <= 1) {
     AlphaBetaVisitor<Game> visitor(node, alpha, beta);
@@ -174,7 +160,6 @@ int negascout_rec(const BoardImpl<Game>& node, int depth, int alpha, int beta,
       int bound = std::round((thresh * pc->sigma + beta - pc->b) / pc->a);
       int r = negascout_rec(node, pc->depth, bound - 1, bound, nullptr, hash,
                             prev_hash, 0);
-      if (timed_out) return 0;
       if (r >= bound) {
         if (hash_entry) hash_entry->first = std::max(hash_entry->first, beta);
         return beta;
@@ -184,7 +169,6 @@ int negascout_rec(const BoardImpl<Game>& node, int depth, int alpha, int beta,
       int bound = std::round((-thresh * pc->sigma + alpha - pc->b) / pc->a);
       int r = negascout_rec(node, pc->depth, bound, bound + 1, nullptr, hash,
                             prev_hash, 0);
-      if (timed_out) return 0;
       if (r <= bound) {
         if (hash_entry)
           hash_entry->second = std::min(hash_entry->second, alpha);
@@ -209,16 +193,13 @@ int negascout_rec(const BoardImpl<Game>& node, int depth, int alpha, int beta,
     if (found_pv) {
       score = -negascout_rec(child.board, depth - 1, -a - 1, -a, nullptr,
                              hash + 1, prev_hash + 1, hash_depth - 1);
-      if (timed_out) return 0;
       if (score > a && score < beta) {
         score = -negascout_rec(child.board, depth - 1, -beta, -score, nullptr,
                                hash + 1, prev_hash + 1, hash_depth - 1);
-        if (timed_out) return 0;
       }
     } else {
       score = -negascout_rec(child.board, depth - 1, -beta, -a, nullptr,
                              hash + 1, prev_hash + 1, hash_depth - 1);
-      if (timed_out) return 0;
     }
 
     if (score >= beta) {
@@ -247,16 +228,10 @@ int negascout_rec(const BoardImpl<Game>& node, int depth, int alpha, int beta,
 }  // namespace
 
 template <class Game>
-SearchResult negascout(const BoardImpl<Game>& node, int max_depth, int stop_ms,
-                       int timeout_ms) {
+SearchResult negascout(const BoardImpl<Game>& node, int max_depth,
+                       std::function<bool(int, SearchResult)> callback) {
   Move best_move = Move::invalid();
   int score;
-
-  clock_t start = clock();
-  expire_clock = start + timeout_ms * (CLOCKS_PER_SEC / 1000);
-  check_point = visited_nodes + CHECKPOINT_INTERVAL;
-  timed_out = false;
-  enable_timeout = false;
 
 #ifdef PROBSTAT
   score =
@@ -268,28 +243,20 @@ SearchResult negascout(const BoardImpl<Game>& node, int max_depth, int stop_ms,
   prev_hash = std::make_unique<Hash<Game>[]>(max_depth);
   for (int i = 2; i <= max_depth; i++) {
     hash = std::make_unique<Hash<Game>[]>(max_depth);
-    Move move;
-    score = negascout_rec(node, i, -INT_MAX, INT_MAX, &move, hash.get(),
+    score = negascout_rec(node, i, -INT_MAX, INT_MAX, &best_move, hash.get(),
                           prev_hash.get(), 8);
-    if (timed_out) break;
-    double sec = (double)(clock() - start) / CLOCKS_PER_SEC;
-#ifdef BLOKUSDUO_VERBOSE
-    printf("%d> %.3f %s (%d)\n", i, sec, move.fourcc().c_str(), score);
-#endif
     prev_hash = std::move(hash);
-    best_move = move;
-    enable_timeout = true;
-    if (sec * 1000 > stop_ms) break;
+    if (!callback(i, SearchResult(best_move, score))) break;
   }
 
   return SearchResult(best_move, score);
 }
 template SearchResult negascout<BlokusDuoMini>(
-    const BoardImpl<BlokusDuoMini>& node, int max_depth, int stop_ms,
-    int timeout_ms);
+    const BoardImpl<BlokusDuoMini>& node, int max_depth,
+    std::function<bool(int, SearchResult)> callback);
 template SearchResult negascout<BlokusDuoStandard>(
-    const BoardImpl<BlokusDuoStandard>& node, int max_depth, int stop_ms,
-    int timeout_ms);
+    const BoardImpl<BlokusDuoStandard>& node, int max_depth,
+    std::function<bool(int, SearchResult)> callback);
 
 template <class Game>
 using WldHash = std::unordered_map<typename BoardImpl<Game>::Key, int,
@@ -302,10 +269,7 @@ int wld_rec(const BoardImpl<Game>& node, int alpha, int beta,
   auto i = hash->find(key);
   if (i != hash->end()) return node.is_violet_turn() ? i->second : -i->second;
 
-  if (++visited_nodes >= check_point) {
-    if ((int)(expire_clock - clock()) < 0) throw Timeout();
-    check_point += CHECKPOINT_INTERVAL;
-  }
+  ++visited_nodes;
 
   std::vector<Move> valid_moves = node.valid_moves();
   if (valid_moves[0].is_pass()) {
@@ -334,10 +298,7 @@ int wld_rec(const BoardImpl<Game>& node, int alpha, int beta,
 }
 
 template <class Game>
-SearchResult wld(const BoardImpl<Game>& node, int timeout_sec) {
-  expire_clock = clock() + timeout_sec * CLOCKS_PER_SEC;
-  check_point = visited_nodes + CHECKPOINT_INTERVAL;
-
+SearchResult wld(const BoardImpl<Game>& node) {
   WldHash<Game> hash[42];
   visited_nodes++;
 
@@ -356,10 +317,9 @@ SearchResult wld(const BoardImpl<Game>& node, int timeout_sec) {
   }
   return SearchResult(wld_move, alpha);
 }
-template SearchResult wld<BlokusDuoMini>(const BoardImpl<BlokusDuoMini>& node,
-                                         int timeout_sec);
+template SearchResult wld<BlokusDuoMini>(const BoardImpl<BlokusDuoMini>& node);
 template SearchResult wld<BlokusDuoStandard>(
-    const BoardImpl<BlokusDuoStandard>& node, int timeout_sec);
+    const BoardImpl<BlokusDuoStandard>& node);
 
 template <class Game>
 int perfect_rec(const BoardImpl<Game>& node, int alpha, int beta,
@@ -445,26 +405,21 @@ void wld_test()
 
     b.show();
 
-    try {
-        for (int npass = 0; npass < 2;) {
-            clock_t start = clock();
-            visited_nodes = 0;
+    for (int npass = 0; npass < 2;) {
+        clock_t start = clock();
+        visited_nodes = 0;
 
-            SearchResult result = wld(&b, 5);
-            Move m = result.first;
+        SearchResult result = wld(&b);
+        Move m = result.first;
 
-            double sec = (double)(clock() - start) / CLOCKS_PER_SEC;
-            printf("time(%d): %d nodes / %.3f sec (%d nps)\n",
-                   b.turn(), visited_nodes, sec, (int)(visited_nodes / sec));
-            printf("\n%s (%d)\n", m.fourcc().c_str(), result.second);
+        double sec = (double)(clock() - start) / CLOCKS_PER_SEC;
+        printf("time(%d): %d nodes / %.3f sec (%d nps)\n",
+                b.turn(), visited_nodes, sec, (int)(visited_nodes / sec));
+        printf("\n%s (%d)\n", m.fourcc().c_str(), result.second);
 
-            npass = m.is_pass() ? npass+1 : 0;
-            b.play_move(m);
-            b.show();
-        }
-    }
-    catch (Timeout& e) {
-        printf("timeout\n");
+        npass = m.is_pass() ? npass+1 : 0;
+        b.play_move(m);
+        b.show();
     }
 }
 

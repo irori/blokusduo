@@ -11,15 +11,13 @@ Move search_move(const BoardImpl<Game>& b);
 
 template <>
 Move search_move(const BoardImpl<BlokusDuoMini>& b) {
-  int timeout = 10000;
-
   Move move = opening_move(b);
   if (move.is_valid()) return move;
   SearchResult r;
   if (b.turn() < 5)
-    r = negascout(b, b.turn() + 3, timeout / 2, timeout);
+    r = negascout(b, b.turn() + 3, [](int, SearchResult) { return true; });
   else if (b.turn() < 7)
-    r = wld(b, 1000);
+    r = wld(b);
   else
     r = perfect(b);
   return r.first;
@@ -27,16 +25,15 @@ Move search_move(const BoardImpl<BlokusDuoMini>& b) {
 
 template <>
 Move search_move(const BoardImpl<BlokusDuoStandard>& b) {
-  int timeout = 10000;
   int max_depth = b.turn() < 10 ? 3 : b.turn() < 16 ? 4 : b.turn() < 20 ? 5 : 6;
 
   Move move = opening_move(b);
   if (move.is_valid()) return move;
   SearchResult r;
   if (b.turn() < 21)
-    r = negascout(b, max_depth, timeout / 2, timeout);
+    r = negascout(b, max_depth, [](int, SearchResult) { return true; });
   else if (b.turn() < 25)
-    r = wld(b, 1000);
+    r = wld(b);
   else
     r = perfect(b);
   return r.first;
