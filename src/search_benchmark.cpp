@@ -7,12 +7,31 @@ namespace blokusduo::search {
 namespace {
 
 template <class Game>
-Move search_move(const BoardImpl<Game>& b) {
+Move search_move(const BoardImpl<Game>& b);
+
+template <>
+Move search_move(const BoardImpl<BlokusDuoMini>& b) {
+  int timeout = 10000;
+
+  Move move = opening_move(b);
+  if (move.is_valid()) return move;
+  SearchResult r;
+  if (b.turn() < 5)
+    r = negascout(b, b.turn() + 3, timeout / 2, timeout);
+  else if (b.turn() < 7)
+    r = wld(b, 1000);
+  else
+    r = perfect(b);
+  return r.first;
+}
+
+template <>
+Move search_move(const BoardImpl<BlokusDuoStandard>& b) {
   int timeout = 10000;
   int max_depth = b.turn() < 10 ? 3 : b.turn() < 16 ? 4 : b.turn() < 20 ? 5 : 6;
 
   Move move = opening_move(b);
-  if (!(move == Move::invalid())) return move;
+  if (move.is_valid()) return move;
   SearchResult r;
   if (b.turn() < 21)
     r = negascout(b, max_depth, timeout / 2, timeout);
@@ -46,6 +65,7 @@ void playout() {
 }  // namespace blokusduo::search
 
 int main() {
+  blokusduo::search::playout<blokusduo::BlokusDuoMini>();
   blokusduo::search::playout<blokusduo::BlokusDuoStandard>();
   return 0;
 }

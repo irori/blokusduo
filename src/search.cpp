@@ -1,11 +1,11 @@
 #include <assert.h>
 #include <limits.h>
-#include <math.h>
 #include <stdio.h>
 #include <time.h>
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -63,8 +63,17 @@ Child<Game>::Child(const BoardImpl<Game>& b, Move m, Hash<Game>* hash)
 }
 
 template <class Game>
-inline bool move_filter(char piece, int,
-                        const BoardImpl<Game>& board) noexcept {
+bool move_filter(char piece, int, const BoardImpl<Game>& board) noexcept;
+
+template <>
+bool move_filter<BlokusDuoMini>(char, int,
+                                const BoardImpl<BlokusDuoMini>&) noexcept {
+  return true;
+}
+
+template <>
+bool move_filter<BlokusDuoStandard>(
+    char piece, int, const BoardImpl<BlokusDuoStandard>& board) noexcept {
   if (board.turn() < 8 && piece < 'j' /* size < 5 */)
     return false;
   else
@@ -80,7 +89,7 @@ class ChildCollector : public BoardImpl<Game>::MoveVisitor {
     return move_filter(piece, orientation, board);
   }
   bool visit_move(Move m) override {
-    children.push_back(Child<Game>(board, m, hash));
+    children.emplace_back(board, m, hash);
     return true;
   }
   const BoardImpl<Game>& board;
@@ -112,13 +121,6 @@ class AlphaBetaVisitor : public BoardImpl<Game>::MoveVisitor {
   int beta;
 };
 
-inline double round_(double num) {
-  if (num < 0.0)
-    return ceil(num - 0.5);
-  else
-    return floor(num + 0.5);
-}
-
 template <class Game>
 int negascout_rec(const BoardImpl<Game>& node, int depth, int alpha, int beta,
                   Move* best_move, Hash<Game>* hash, Hash<Game>* prev_hash,
@@ -143,8 +145,7 @@ int negascout_rec(const BoardImpl<Game>& node, int depth, int alpha, int beta,
 
   std::pair<int, int>* hash_entry = nullptr;
   if (hash_depth > 0) {
-    auto found = hash->insert(
-        std::make_pair(node.key(), std::make_pair(-INT_MAX, INT_MAX)));
+    auto found = hash->emplace(node.key(), std::make_pair(-INT_MAX, INT_MAX));
     hash_entry = &found.first->second;
     if (!found.second) {
       int ha = hash_entry->first;
@@ -160,7 +161,7 @@ int negascout_rec(const BoardImpl<Game>& node, int depth, int alpha, int beta,
 #ifdef USE_PROBCUT
 
   /* ProbCut */
-  const ProbCut* pc = probcut_entry(node.turn(), depth);
+  const ProbCut* pc = probcut_entry(node, depth);
 
   if (pc) {
     double thresh;
@@ -170,7 +171,7 @@ int negascout_rec(const BoardImpl<Game>& node, int depth, int alpha, int beta,
       thresh = 1.6;
 
     if (beta < INT_MAX) {
-      int bound = (int)round_((thresh * pc->sigma + beta - pc->b) / pc->a);
+      int bound = std::round((thresh * pc->sigma + beta - pc->b) / pc->a);
       int r = negascout_rec(node, pc->depth, bound - 1, bound, nullptr, hash,
                             prev_hash, 0);
       if (timed_out) return 0;
@@ -180,7 +181,7 @@ int negascout_rec(const BoardImpl<Game>& node, int depth, int alpha, int beta,
       }
     }
     if (alpha > -INT_MAX) {
-      int bound = (int)round_((-thresh * pc->sigma + alpha - pc->b) / pc->a);
+      int bound = std::round((-thresh * pc->sigma + alpha - pc->b) / pc->a);
       int r = negascout_rec(node, pc->depth, bound, bound + 1, nullptr, hash,
                             prev_hash, 0);
       if (timed_out) return 0;
@@ -412,8 +413,13 @@ template SearchResult perfect<BlokusDuoMini>(
 template SearchResult perfect<BlokusDuoStandard>(
     const BoardImpl<BlokusDuoStandard>& node);
 
-template <class Game>
-Move opening_move(const BoardImpl<Game>& b) {
+template <>
+Move opening_move<BlokusDuoMini>(const BoardImpl<BlokusDuoMini>&) {
+  return Move::invalid();
+}
+
+template <>
+Move opening_move<BlokusDuoStandard>(const BoardImpl<BlokusDuoStandard>& b) {
   if (b.turn() == 0) {
     static const std::array<Move, 10> good_first_moves = {
         Move("56t2"), Move("65u0"), Move("66p4"), Move("56o4"), Move("56t6"),
@@ -424,9 +430,6 @@ Move opening_move(const BoardImpl<Game>& b) {
   }
   return Move::invalid();
 }
-template Move opening_move<BlokusDuoMini>(const BoardImpl<BlokusDuoMini>& b);
-template Move opening_move<BlokusDuoStandard>(
-    const BoardImpl<BlokusDuoStandard>& b);
 
 #if 0
 void wld_test()
