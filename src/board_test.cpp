@@ -4,12 +4,18 @@
 #include <stdlib.h>
 #include <time.h>
 
+#include <iostream>
 #include <unordered_set>
 
 #include "blokusduo.h"
 #include "piece.h"
 
 namespace blokusduo {
+
+std::ostream& operator<<(std::ostream& os, const Move& m) {
+  return os << m.code();
+}
+
 namespace {
 
 template <class Game>
@@ -42,31 +48,43 @@ void verify_key(const BoardImpl<Game>& b) {
 TEST(Move, Move) {
   EXPECT_FALSE(Move().is_valid());
   EXPECT_FALSE(Move().is_pass());
+
   EXPECT_TRUE(Move::pass().is_pass());
   EXPECT_TRUE(Move::pass().is_valid());
+  EXPECT_TRUE(Move("0000").is_pass());
+  EXPECT_TRUE(Move("----").is_pass());
+  EXPECT_EQ("0000", Move::pass().code());
+
+  EXPECT_FALSE(Move("").is_valid());
+  EXPECT_FALSE(Move("00a0").is_valid());
+  EXPECT_FALSE(Move("1234").is_valid());
+  EXPECT_FALSE(Move("11a9").is_valid());
+  EXPECT_EQ("ccf0", Move("CCF0").code());
 
   Move m("56f2");
+  EXPECT_TRUE(m.is_valid());
+  EXPECT_FALSE(m.is_pass());
   EXPECT_EQ(4, m.x());
   EXPECT_EQ(5, m.y());
   EXPECT_EQ('f', m.piece());
   EXPECT_EQ(2, m.orientation());
 
-  EXPECT_EQ("43b2", Move("33b6").canonicalize().code());
+  EXPECT_EQ(Move("43b2"), Move("33b6").canonicalize());
 
   const char* rotates_of_23f3[8] = {
       "23f3", "73f2", "62f1", "32f0", "76f7", "26f6", "37f5", "67f4",
   };
   for (int r = 0; r < 8; r++) {
-    EXPECT_EQ(rotates_of_23f3[r],
-              mini::Board::rotate_move(Move("23f3"), r).code());
+    EXPECT_EQ(Move(rotates_of_23f3[r]),
+              mini::Board::rotate_move(Move("23f3"), r));
   }
 
   const char* rotates_of_34t0[8] = {
       "34t0", "C4t1", "B3t2", "43t3", "CBt4", "3Bt5", "4Ct6", "BCt7",
   };
   for (int r = 0; r < 8; r++) {
-    EXPECT_EQ(rotates_of_34t0[r],
-              standard::Board::rotate_move(Move("34t0"), r).code());
+    EXPECT_EQ(Move(rotates_of_34t0[r]),
+              standard::Board::rotate_move(Move("34t0"), r));
   }
 }
 

@@ -43,25 +43,43 @@ constexpr uint64_t inflate8x8(uint64_t bits) {
   return bits | shu8x8(bits) | shd8x8(bits) | shl8x8(bits) | shr8x8(bits);
 }
 
+int hex_to_int(char c) {
+  if (isdigit(c)) return c - '0';
+  if (islower(c)) return c - 'a' + 10;
+  if (isupper(c)) return c - 'A' + 10;
+  return -1;
+}
+
 }  // namespace
 
 Move::Move(std::string_view code) {
-  if (code[0] == '-')
-    m_ = 0xffff;
-  else {
-    int xy;
-    sscanf(code.data(), "%2X", &xy);
-    int piece_id = (tolower(code[2]) - 'a') << 3 | (code[3] - '0');
-    m_ = (xy - 0x11) | piece_id << 8;
+  if (code.size() != 4) {
+    m_ = INVALID;
+    return;
   }
+  if (code == "----" || code == "0000") {
+    m_ = PASS;
+    return;
+  }
+  int x = hex_to_int(code[0]) - 1;
+  int y = hex_to_int(code[1]) - 1;
+  int p = tolower(code[2]) - 'a';
+  int o = code[3] - '0';
+  if (x < 0 || x >= BlokusDuoStandard::XSIZE || y < 0 ||
+      y >= BlokusDuoStandard::YSIZE || p < 0 ||
+      p >= BlokusDuoStandard::NUM_PIECES || o < 0 || o >= 8) {
+    m_ = INVALID;
+    return;
+  }
+  m_ = p << 11 | o << 8 | x << 4 | y;
 }
 
 std::string Move::code() const noexcept {
   char buf[5];
   if (is_pass())
-    strcpy(buf, "----");
+    strcpy(buf, "0000");
   else
-    sprintf(buf, "%2X%c%d", (m_ + 0x11) & 0xff, piece(), orientation());
+    sprintf(buf, "%2x%c%d", (m_ + 0x11) & 0xff, piece(), orientation());
   return std::string(buf);
 }
 
