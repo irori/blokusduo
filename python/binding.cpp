@@ -74,8 +74,8 @@ void define_blokusduo_module(nb::module_&& m) {
 NB_MODULE(blokusduo, m) {
   nb::class_<Move>(m, "Move")
       .def(nb::init<const char*>())
-      .def("__repr__", [](Move m) { return "Move(" + m.fourcc() + ")"; })
-      .def("__str__", &Move::fourcc)
+      .def("__repr__", [](Move m) { return "Move(" + m.code() + ")"; })
+      .def("__str__", &Move::code)
       .def("__eq__", &Move::operator==)
       .def("__hash__", [](Move m) { return Move::Hash()(m); })
       .def_prop_ro("x", &Move::x)

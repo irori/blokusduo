@@ -230,7 +230,7 @@ int negascout_rec(const BoardImpl<Game>& node, int depth, int alpha, int beta,
 template <class Game>
 SearchResult negascout(const BoardImpl<Game>& node, int max_depth,
                        std::function<bool(int, SearchResult)> callback) {
-  Move best_move = Move::invalid();
+  Move best_move;
   int score;
 
 #ifdef PROBSTAT
@@ -304,7 +304,7 @@ SearchResult wld(const BoardImpl<Game>& node) {
 
   int alpha = -INT_MAX, beta = INT_MAX;
   std::vector<Move> valid_moves = node.valid_moves();
-  Move wld_move = Move::invalid();
+  Move wld_move;
 
   for (Move move : valid_moves) {
     BoardImpl<Game> child = node.child(move);
@@ -357,7 +357,7 @@ SearchResult perfect(const BoardImpl<Game>& node) {
   visited_nodes++;
 
   int alpha = -INT_MAX, beta = INT_MAX;
-  Move perfect_move = Move::invalid();
+  Move perfect_move;
   for (Move move : node.valid_moves()) {
     auto child = node.child(move);
     int v = -perfect_rec(child, -beta, -alpha, hash.get());
@@ -375,7 +375,7 @@ template SearchResult perfect<BlokusDuoStandard>(
 
 template <>
 Move opening_move<BlokusDuoMini>(const BoardImpl<BlokusDuoMini>&) {
-  return Move::invalid();
+  return Move();
 }
 
 template <>
@@ -388,7 +388,7 @@ Move opening_move<BlokusDuoStandard>(const BoardImpl<BlokusDuoStandard>& b) {
         (int)((rand() / ((double)RAND_MAX + 1.0f)) * good_first_moves.size());
     return good_first_moves[i];
   }
-  return Move::invalid();
+  return Move();
 }
 
 #if 0
@@ -415,7 +415,7 @@ void wld_test()
         double sec = (double)(clock() - start) / CLOCKS_PER_SEC;
         printf("time(%d): %d nodes / %.3f sec (%d nps)\n",
                 b.turn(), visited_nodes, sec, (int)(visited_nodes / sec));
-        printf("\n%s (%d)\n", m.fourcc().c_str(), result.second);
+        printf("\n%s (%d)\n", m.code().c_str(), result.second);
 
         npass = m.is_pass() ? npass+1 : 0;
         b.play_move(m);
@@ -447,7 +447,7 @@ void perfect_test()
         double sec = (double)(clock() - start) / CLOCKS_PER_SEC;
         printf("time(%d): %d nodes / %.3f sec (%d nps)\n",
                b.turn(), visited_nodes, sec, (int)(visited_nodes / sec));
-        printf("\n%s (%d)\n", m.fourcc().c_str(), result.second);
+        printf("\n%s (%d)\n", m.code().c_str(), result.second);
 
         npass = m.is_pass() ? npass+1 : 0;
         b.play_move(m);

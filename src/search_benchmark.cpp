@@ -52,7 +52,7 @@ void playout() {
     b.play_move(m);
 
     double sec = (double)(clock() - start) / CLOCKS_PER_SEC;
-    printf("%d %s %d nodes / %.3f sec (%d nps)\n", b.turn(), m.fourcc().c_str(),
+    printf("%d %s %d nodes / %.3f sec (%d nps)\n", b.turn(), m.code().c_str(),
            visited_nodes, sec, (int)(visited_nodes / sec));
     fflush(stdout);
   }

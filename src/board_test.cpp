@@ -59,7 +59,7 @@ void test_move() {
   Move canonical = Move("33b6").canonicalize();
   if (canonical != Move("43b2")) {
     fail("33b6 should be canonicalized to 43b2, but got %s\n",
-         canonical.fourcc().c_str());
+         canonical.code().c_str());
   }
 
   Move rotates_of_23f3[8] = {
@@ -70,7 +70,7 @@ void test_move() {
     Move actual = mini::Board::rotate_move(Move("23f3"), r);
     if (actual != rotates_of_23f3[r]) {
       fail("rotate_move(23f3, %d) should be %s, but got %s\n", r,
-           rotates_of_23f3[r].fourcc().c_str(), actual.fourcc().c_str());
+           rotates_of_23f3[r].code().c_str(), actual.code().c_str());
     }
   }
 
@@ -82,7 +82,7 @@ void test_move() {
     Move actual = standard::Board::rotate_move(Move("34t0"), r);
     if (actual != rotates_of_34t0[r]) {
       fail("rotate_move(34t0, %d) should be %s, but got %s\n", r,
-           rotates_of_34t0[r].fourcc().c_str(), actual.fourcc().c_str());
+           rotates_of_34t0[r].code().c_str(), actual.code().c_str());
     }
   }
 }
@@ -110,9 +110,9 @@ void test_random_playout() {
           bool placeable = b.is_valid_move(m);
           bool found = valid_moves.find(m) != valid_moves.end();
           if (placeable && !found)
-            fail("%s is placeable but not found\n", m.fourcc().c_str());
+            fail("%s is placeable but not found\n", m.code().c_str());
           else if (!placeable && found)
-            fail("%s is not placeable but found\n", m.fourcc().c_str());
+            fail("%s is not placeable but found\n", m.code().c_str());
         }
       }
     }
@@ -123,7 +123,7 @@ void test_random_playout() {
     std::advance(it, n);
     Move m = *it;
     b.play_move(m);
-    // printf("%d %s\n", b.turn(), m.fourcc().c_str());
+    // printf("%d %s\n", b.turn(), m.code().c_str());
 
     verify_key(b);
   }

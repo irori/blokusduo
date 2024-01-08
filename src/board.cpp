@@ -45,18 +45,18 @@ constexpr uint64_t inflate8x8(uint64_t bits) {
 
 }  // namespace
 
-Move::Move(std::string_view fourcc) {
-  if (fourcc[0] == '-')
+Move::Move(std::string_view code) {
+  if (code[0] == '-')
     m_ = 0xffff;
   else {
     int xy;
-    sscanf(fourcc.data(), "%2X", &xy);
-    int piece_id = (tolower(fourcc[2]) - 'a') << 3 | (fourcc[3] - '0');
+    sscanf(code.data(), "%2X", &xy);
+    int piece_id = (tolower(code[2]) - 'a') << 3 | (code[3] - '0');
     m_ = (xy - 0x11) | piece_id << 8;
   }
 }
 
-std::string Move::fourcc() const {
+std::string Move::code() const noexcept {
   char buf[5];
   if (is_pass())
     strcpy(buf, "----");
@@ -65,7 +65,7 @@ std::string Move::fourcc() const {
   return std::string(buf);
 }
 
-Move Move::canonicalize() const {
+Move Move::canonicalize() const noexcept {
   if (is_pass()) return Move::pass();
   auto& rot = block_set[piece_id()].rotations[orientation()];
   int new_x = x() + rot.offset_x;

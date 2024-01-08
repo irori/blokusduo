@@ -17,33 +17,53 @@ class Piece;
 // Represents a move in the game of Blokus Duo.
 class Move {
  public:
-  Move() : m_(INVALID) {}
-  Move(std::string_view fourcc);
-  Move(int x, int y, int piece_id) : m_(x << 4 | y | piece_id << 8) {}
-  int x() const { return m_ >> 4 & 0xf; }
-  int y() const { return m_ & 0xf; }
-  char piece() const { return 'a' + piece_id(); }
-  int piece_id() const { return m_ >> 11; }
-  int orientation() const { return m_ >> 8 & 0x7; }
-  bool is_pass() const { return m_ == PASS; }
-  bool is_valid() const { return m_ != INVALID; }
-  std::string fourcc() const;
-  Move canonicalize() const;
-  bool operator<(const Move& rhs) const { return m_ < rhs.m_; }
-  bool operator==(const Move& rhs) const { return m_ == rhs.m_; }
-  bool operator!=(const Move& rhs) const { return m_ != rhs.m_; }
+  // Construct an invalid move.
+  Move() noexcept : m_(INVALID) {}
+
+  // Construct a move from a four-letter code
+  // (http://www.icfpt2014.org/Info.asp?call=57B842DF9E6A0F4206826BB4449D5355).
+  explicit Move(std::string_view code);
+
+  // Construct a move from a piece ID, orientation, and coordinates.
+  // Note that this constructor does not check whether the arguments are valid.
+  Move(int x, int y, int piece_id) noexcept : m_(x << 4 | y | piece_id << 8) {}
+
+  // Predicate methods.
+  bool is_pass() const noexcept { return m_ == PASS; }
+  bool is_valid() const noexcept { return m_ != INVALID; }
+
+  // Accessors. They return meaningless values for invalid and pass moves.
+  int x() const noexcept { return m_ >> 4 & 0xf; }
+  int y() const noexcept { return m_ & 0xf; }
+  char piece() const noexcept { return 'a' + piece_id(); }
+  int piece_id() const noexcept { return m_ >> 11; }
+  int orientation() const noexcept { return m_ >> 8 & 0x7; }
+
+  // Returns a four-letter code for the move.
+  std::string code() const noexcept;
+
+  // Returns the canonicalized version of the move. For example, 65p3 and 65p6
+  // are the same move, but the one with the smaller orientation value, i.e.
+  // 65p3, is canonical.
+  Move canonicalize() const noexcept;
+
+  bool operator<(const Move& rhs) const noexcept { return m_ < rhs.m_; }
+  bool operator==(const Move& rhs) const noexcept { return m_ == rhs.m_; }
+  bool operator!=(const Move& rhs) const noexcept { return m_ != rhs.m_; }
 
   struct Hash {
-    size_t operator()(Move key) const { return std::hash<uint16_t>{}(key.m_); }
+    size_t operator()(Move key) const noexcept {
+      return std::hash<uint16_t>{}(key.m_);
+    }
   };
 
-  static Move pass() { return Move(PASS); }
-  static Move invalid() { return Move(); }
+  // Returns a pass move.
+  static Move pass() noexcept { return Move(PASS); }
 
  private:
   constexpr static uint16_t PASS = 0xffff;
   constexpr static uint16_t INVALID = 0xfffe;
-  Move(uint16_t m) : m_(m){};
+  Move(uint16_t m) noexcept : m_(m){};
 
   uint16_t m_;
 };
