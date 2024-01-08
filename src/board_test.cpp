@@ -1,3 +1,4 @@
+#include <gtest/gtest.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,16 +22,8 @@ class MoveCollector : public BoardImpl<Game>::MoveVisitor {
   std::unordered_set<Move, Move::Hash> valid_moves;
 };
 
-void fail(const char *fmt, ...) {
-  va_list args;
-  va_start(args, fmt);
-  vprintf(fmt, args);
-  va_end(args);
-  exit(1);
-}
-
 template <class Game>
-void verify_key(const BoardImpl<Game> &b) {
+void verify_key(const BoardImpl<Game>& b) {
   typename BoardImpl<Game>::Key key;
   for (int y = 0; y < BoardImpl<Game>::YSIZE; y++) {
     for (int x = 0; x < BoardImpl<Game>::XSIZE; x++) {
@@ -43,76 +36,73 @@ void verify_key(const BoardImpl<Game> &b) {
   if (b.did_pass(1)) key.set_pass(1);
   if (b.player() == 1) key.flip_player();
 
-  if (key != b.key()) {
-    fail("Key mismatch\n");
-  }
+  EXPECT_EQ(key, b.key());
 }
 
-}  // namespace
+TEST(Move, Move) {
+  EXPECT_FALSE(Move().is_valid());
+  EXPECT_FALSE(Move().is_pass());
+  EXPECT_TRUE(Move::pass().is_pass());
+  EXPECT_TRUE(Move::pass().is_valid());
 
-void test_move() {
   Move m("56f2");
-  if (m.x() != 4 || m.y() != 5 || m.piece() != 'f' || m.orientation() != 2) {
-    fail("56f2 should be (4, 5, 'f', 2), but got (%d, %d, '%c', %d)\n", m.x(),
-         m.y(), m.piece(), m.orientation());
-  }
-  Move canonical = Move("33b6").canonicalize();
-  if (canonical != Move("43b2")) {
-    fail("33b6 should be canonicalized to 43b2, but got %s\n",
-         canonical.code().c_str());
-  }
+  EXPECT_EQ(4, m.x());
+  EXPECT_EQ(5, m.y());
+  EXPECT_EQ('f', m.piece());
+  EXPECT_EQ(2, m.orientation());
 
-  Move rotates_of_23f3[8] = {
-      Move("23f3"), Move("73f2"), Move("62f1"), Move("32f0"),
-      Move("76f7"), Move("26f6"), Move("37f5"), Move("67f4"),
+  EXPECT_EQ("43b2", Move("33b6").canonicalize().code());
+
+  const char* rotates_of_23f3[8] = {
+      "23f3", "73f2", "62f1", "32f0", "76f7", "26f6", "37f5", "67f4",
   };
   for (int r = 0; r < 8; r++) {
-    Move actual = mini::Board::rotate_move(Move("23f3"), r);
-    if (actual != rotates_of_23f3[r]) {
-      fail("rotate_move(23f3, %d) should be %s, but got %s\n", r,
-           rotates_of_23f3[r].code().c_str(), actual.code().c_str());
-    }
+    EXPECT_EQ(rotates_of_23f3[r],
+              mini::Board::rotate_move(Move("23f3"), r).code());
   }
 
-  Move rotates_of_34t0[8] = {
-      Move("34t0"), Move("C4t1"), Move("B3t2"), Move("43t3"),
-      Move("CBt4"), Move("3Bt5"), Move("4Ct6"), Move("BCt7"),
+  const char* rotates_of_34t0[8] = {
+      "34t0", "C4t1", "B3t2", "43t3", "CBt4", "3Bt5", "4Ct6", "BCt7",
   };
   for (int r = 0; r < 8; r++) {
-    Move actual = standard::Board::rotate_move(Move("34t0"), r);
-    if (actual != rotates_of_34t0[r]) {
-      fail("rotate_move(34t0, %d) should be %s, but got %s\n", r,
-           rotates_of_34t0[r].code().c_str(), actual.code().c_str());
-    }
+    EXPECT_EQ(rotates_of_34t0[r],
+              standard::Board::rotate_move(Move("34t0"), r).code());
   }
 }
 
-template <class Game>
-void test_random_playout() {
-  BoardImpl<Game> b;
+TEST(Board, AllPossibleMoves) {
+  EXPECT_EQ(1270, mini::Board::all_possible_moves().size());
+  EXPECT_EQ(13730, standard::Board::all_possible_moves().size());
+}
+
+template <typename T>
+class BoardTest : public testing::Test {
+  using Game = T;
+};
+
+using Games = ::testing::Types<BlokusDuoMini, BlokusDuoStandard>;
+TYPED_TEST_SUITE(BoardTest, Games);
+
+TYPED_TEST(BoardTest, RandomPlayout) {
+  srand(time(nullptr));
+  BoardImpl<TypeParam> b;
   while (!b.is_game_over()) {
-    MoveCollector<Game> collector;
+    MoveCollector<TypeParam> collector;
     b.visit_moves(&collector);
     std::unordered_set<Move, Move::Hash> valid_moves =
         std::move(collector.valid_moves);
 
-    if (valid_moves.empty()) {
-      fail("No leval moves\n");
-    } else if (valid_moves.find(Move::pass()) != valid_moves.end()) {
-      if (valid_moves.size() != 1) fail("PASS is not the only valid move\n");
+    ASSERT_FALSE(valid_moves.empty());
+    if (valid_moves.contains(Move::pass())) {
+      EXPECT_EQ(1, valid_moves.size());
     }
 
     // Verify that all valid moves are placeable.
-    for (auto p : Game::piece_set) {
-      for (int y = 0; y < BoardImpl<Game>::YSIZE; y++) {
-        for (int x = 0; x < BoardImpl<Game>::XSIZE; x++) {
+    for (auto p : TypeParam::piece_set) {
+      for (int y = 0; y < BoardImpl<TypeParam>::YSIZE; y++) {
+        for (int x = 0; x < BoardImpl<TypeParam>::XSIZE; x++) {
           Move m = Move(x, y, p->id);
-          bool placeable = b.is_valid_move(m);
-          bool found = valid_moves.find(m) != valid_moves.end();
-          if (placeable && !found)
-            fail("%s is placeable but not found\n", m.code().c_str());
-          else if (!placeable && found)
-            fail("%s is not placeable but found\n", m.code().c_str());
+          EXPECT_EQ(b.is_valid_move(m), valid_moves.contains(m));
         }
       }
     }
@@ -129,22 +119,5 @@ void test_random_playout() {
   }
 }
 
-template <class Game>
-void test_all_possible_moves(size_t expected_num_moves) {
-  std::vector<Move> moves = BoardImpl<Game>::all_possible_moves();
-  if (moves.size() != expected_num_moves) {
-    fail("Expected %zu moves but got %zu\n", expected_num_moves, moves.size());
-  }
-}
-
+}  // namespace
 }  // namespace blokusduo
-
-int main() {
-  srand(time(nullptr));
-  blokusduo::test_move();
-  blokusduo::test_random_playout<blokusduo::BlokusDuoMini>();
-  blokusduo::test_random_playout<blokusduo::BlokusDuoStandard>();
-  blokusduo::test_all_possible_moves<blokusduo::BlokusDuoMini>(1270);
-  blokusduo::test_all_possible_moves<blokusduo::BlokusDuoStandard>(13730);
-  return 0;
-}

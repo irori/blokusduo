@@ -19,11 +19,13 @@ add_library(blokusduo STATIC
 target_include_directories(blokusduo PUBLIC include PRIVATE src)
 set_target_properties(blokusduo PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-add_executable(board_test src/board_test.cpp)
-target_link_libraries(board_test blokusduo)
-
-enable_testing()
-add_test(NAME board_test COMMAND board_test)
+find_package(GTest)
+if (GTest_FOUND)
+  enable_testing()
+  add_executable(board_test src/board_test.cpp)
+  target_link_libraries(board_test blokusduo GTest::gtest GTest::gtest_main)
+  add_test(NAME board_test COMMAND board_test)
+endif()
 
 add_executable(search_benchmark src/search_benchmark.cpp)
 target_link_libraries(search_benchmark blokusduo)
