@@ -284,11 +284,20 @@ using SearchResult = std::pair<Move, short>;
 // value, so it accumulates across multiple calls to search functions.
 extern int visited_nodes;
 
+// Performs the NegaScout (Principal Variation Search) algorithm to evaluate
+// the given game board node up to a specified maximum depth.
+// `callback` is A function that is called during the search process. It takes
+// the current depth and the current search result as arguments and returns
+// a boolean indicating whether to continue the search.
 template <class Game>
 SearchResult negascout(const BoardImpl<Game>& node, int max_depth,
                        std::function<bool(int, SearchResult)> callback);
+
+// Performs a win-loss-draw (WLD) search on the given game board node.
 template <class Game>
 SearchResult wld(const BoardImpl<Game>& node);
+
+// Returns the optimal move for the given game board node.
 template <class Game>
 SearchResult perfect(const BoardImpl<Game>& node);
 

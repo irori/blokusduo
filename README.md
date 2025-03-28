@@ -43,8 +43,21 @@ cmake --build build
 cmake --install build
 ```
 
-Then you can import the library in Python:
+Then you can import the library in Python.
+The following code runs a game with the AI playing both sides:
 
 ```python
 import blokusduo
+
+GAME = blokusduo.standard
+MAX_DEPTH = 4
+
+b = GAME.Board()
+while not b.is_game_over():
+    move, score = GAME.search_negascout(b, MAX_DEPTH, lambda d, r: True)
+    b.play_move(move)
+    print('Turn %d: %s' % (b.turn, move))
+    print(b)
+print('Violet: %d' % b.score(0))
+print('Orange: %d' % b.score(1))
 ```
