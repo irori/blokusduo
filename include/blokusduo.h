@@ -156,7 +156,7 @@ class BoardImpl {
   constexpr static int XSIZE = Game::XSIZE;
   constexpr static int YSIZE = Game::YSIZE;
 
-  BoardImpl();
+  BoardImpl() = default;
 
   // Accessors.
   int player() const { return player_; }
@@ -172,24 +172,10 @@ class BoardImpl {
   using Key = typename Game::Key;
   const Key& key() const { return key_; }
 
-  // Accessing the board. The board is represented as a 2D array of cells, with
-  // each cell containing a bit mask of the following flags:
-  constexpr static uint8_t VIOLET_TILE = 0x01;  // Occupied by violet piece.
-  constexpr static uint8_t ORANGE_TILE = 0x02;  // Occupied by orange piece.
-  constexpr static uint8_t VIOLET_EDGE = 0x04;  // Adjacent to violet piece.
-  constexpr static uint8_t ORANGE_EDGE = 0x08;  // Adjacent to orange piece.
-  constexpr static uint8_t VIOLET_CORNER =
-      0x10;  // Diagonally adjacent to violet piece.
-  constexpr static uint8_t ORANGE_CORNER =
-      0x20;  // Diagonally adjacent to orange piece.
-  constexpr static uint8_t VIOLET_MASK =
-      VIOLET_TILE | VIOLET_EDGE | VIOLET_CORNER;
-  constexpr static uint8_t ORANGE_MASK =
-      ORANGE_TILE | ORANGE_EDGE | ORANGE_CORNER;
-
-  uint8_t& at(int x, int y) { return cells[y][x]; }
-  const uint8_t& at(int x, int y) const { return cells[y][x]; }
-  const uint8_t (&data() const)[YSIZE][XSIZE] { return cells; }
+  // Returns whether the player has a tile at the given position.
+  bool has_tile(int player, int x, int y) const noexcept {
+    return key_.a[player][y] & (uint16_t{1} << x);
+  }
 
   // Enumerating moves.
   class MoveVisitor {
@@ -253,13 +239,8 @@ class BoardImpl {
   static Move rotate_move(Move move, int rotation);
 
  protected:
-  static bool in_bounds(int x, int y) {
-    return (x >= 0 && y >= 0 && x < XSIZE && y < YSIZE);
-  }
-
   constexpr static uint32_t PASSED = 0x80000000;
   Key key_;
-  uint8_t cells[YSIZE][XSIZE] = {};
   uint32_t pieces_[2] = {0, 0};
   int piece_eval_ = 0;
   int turn_ = 0;

@@ -75,5 +75,15 @@ if (BUILD_PYTHON)
   set_target_properties(blokusduo-python PROPERTIES OUTPUT_NAME blokusduo)
   target_link_libraries(blokusduo-python PRIVATE blokusduo)
 
+  enable_testing()
+  add_test(
+    NAME python_binding_test
+    COMMAND ${Python_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/python/binding_test.py
+  )
+  set_tests_properties(
+    python_binding_test PROPERTIES
+    ENVIRONMENT "PYTHONPATH=$<TARGET_FILE_DIR:blokusduo-python>"
+  )
+
   install(TARGETS blokusduo-python DESTINATION ${Python_SITEARCH})
 endif()

@@ -97,12 +97,6 @@ Move Move::canonicalize() const noexcept {
 }
 
 template <class Game>
-BoardImpl<Game>::BoardImpl() {
-  at(Game::START1X, Game::START1Y) = VIOLET_CORNER;
-  at(Game::START2X, Game::START2Y) = ORANGE_CORNER;
-}
-
-template <class Game>
 bool BoardImpl<Game>::is_valid_move(Move move) const {
   if (move.is_pass()) return true;
 
@@ -149,23 +143,11 @@ void BoardImpl<Game>::play_move(Move move) {
     int py = move.y() + rot.offset_y;
     const Piece* piece = rot.piece;
 
-    uint8_t block = is_violet_turn() ? VIOLET_TILE : ORANGE_TILE;
-    uint8_t edge_bit = is_violet_turn() ? VIOLET_EDGE : ORANGE_EDGE;
-    uint8_t corner_bit = is_violet_turn() ? VIOLET_CORNER : ORANGE_CORNER;
-
-    for (int i = 0; i < piece->size; i++) {
-      int x = px + piece->coords[i].x;
-      int y = py + piece->coords[i].y;
-      at(x, y) |= block;
-      key_.set(player_, x, y);
-      if (in_bounds(x - 1, y)) at(x - 1, y) |= edge_bit;
-      if (in_bounds(x, y - 1)) at(x, y - 1) |= edge_bit;
-      if (in_bounds(x + 1, y)) at(x + 1, y) |= edge_bit;
-      if (in_bounds(x, y + 1)) at(x, y + 1) |= edge_bit;
-      if (in_bounds(x - 1, y - 1)) at(x - 1, y - 1) |= corner_bit;
-      if (in_bounds(x + 1, y - 1)) at(x + 1, y - 1) |= corner_bit;
-      if (in_bounds(x - 1, y + 1)) at(x - 1, y + 1) |= corner_bit;
-      if (in_bounds(x + 1, y + 1)) at(x + 1, y + 1) |= corner_bit;
+    const int piece_x = px + piece->minx;
+    const int piece_y = py + piece->miny;
+    const uint8_t* rows = piece_row_masks[piece->id];
+    for (int row = 0; row <= piece->maxy - piece->miny; row++) {
+      key_.a[player_][piece_y + row] |= rows[row] << piece_x;
     }
   }
   turn_++;
@@ -317,9 +299,9 @@ std::string BoardImpl<Game>::to_string() const {
   std::string s;
   for (int y = 0; y < YSIZE; y++) {
     for (int x = 0; x < XSIZE; x++) {
-      if (at(x, y) & VIOLET_TILE)
+      if (has_tile(0, x, y))
         s += 'V';
-      else if (at(x, y) & ORANGE_TILE)
+      else if (has_tile(1, x, y))
         s += 'O';
       else
         s += '.';

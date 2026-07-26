@@ -12,12 +12,38 @@ namespace nb = nanobind;
 namespace {
 
 template <class Game>
-auto pieces(const BoardImpl<Game>& b, int player) {
-  static bool data[Game::NUM_PIECES];
-  for (int i = 0; i < Game::NUM_PIECES; ++i)
-    data[i] = b.is_piece_available(player, i);
-  return nb::ndarray<nb::numpy, const bool, nb::shape<Game::NUM_PIECES>>(
-      data, {Game::NUM_PIECES});
+auto available_pieces(const BoardImpl<Game>& b) {
+  constexpr int SIZE = 2 * Game::NUM_PIECES;
+  bool* data = new bool[SIZE];
+  for (int player = 0; player < 2; player++) {
+    for (int piece = 0; piece < Game::NUM_PIECES; piece++) {
+      data[player * Game::NUM_PIECES + piece] =
+          b.is_piece_available(player, piece);
+    }
+  }
+  nb::capsule owner(data,
+                    [](void* p) noexcept { delete[] static_cast<bool*>(p); });
+  return nb::ndarray<nb::numpy, bool, nb::shape<2, Game::NUM_PIECES>>(
+      data, {2, Game::NUM_PIECES}, owner);
+}
+
+template <class Game>
+auto occupancy(const BoardImpl<Game>& b) {
+  constexpr int SIZE = 2 * Game::YSIZE * Game::XSIZE;
+  bool* data = new bool[SIZE];
+  for (int player = 0; player < 2; player++) {
+    for (int y = 0; y < Game::YSIZE; y++) {
+      for (int x = 0; x < Game::XSIZE; x++) {
+        data[(player * Game::YSIZE + y) * Game::XSIZE + x] =
+            b.has_tile(player, x, y);
+      }
+    }
+  }
+  nb::capsule owner(data,
+                    [](void* p) noexcept { delete[] static_cast<bool*>(p); });
+  return nb::ndarray<nb::numpy, bool,
+                     nb::shape<2, Game::YSIZE, Game::XSIZE>>(
+      data, {2, Game::YSIZE, Game::XSIZE}, owner);
 }
 
 template <class Game>
@@ -25,8 +51,6 @@ void define_blokusduo_module(nb::module_&& m) {
   // Addressable constants.
   static const int XSIZE = BoardImpl<Game>::XSIZE;
   static const int YSIZE = BoardImpl<Game>::YSIZE;
-  static const int VIOLET_TILE = BoardImpl<Game>::VIOLET_TILE;
-  static const int ORANGE_TILE = BoardImpl<Game>::ORANGE_TILE;
 
   m.attr("NUM_PIECES") = Game::NUM_PIECES;
   nb::class_<BoardImpl<Game>>(m, "Board")
@@ -41,22 +65,14 @@ void define_blokusduo_module(nb::module_&& m) {
       .def("is_valid_move", &BoardImpl<Game>::is_valid_move)
       .def("is_piece_available", &BoardImpl<Game>::is_piece_available)
       .def("did_pass", &BoardImpl<Game>::did_pass)
-      .def("pieces", &pieces<Game>)
+      .def("available_pieces", &available_pieces<Game>)
       .def("hash_key",
            [](const BoardImpl<Game>& b) {
              auto key = b.key().string_view();
              return nb::bytes(key.data(), key.size());
            })
-      .def_ro_static("VIOLET_TILE", &VIOLET_TILE)
-      .def_ro_static("ORANGE_TILE", &ORANGE_TILE)
-      .def("at", nb::overload_cast<int, int>(&BoardImpl<Game>::at, nb::const_))
-      .def("data",
-           [](const BoardImpl<Game>& b) {
-             return nb::ndarray<
-                 nb::numpy, const uint8_t,
-                 nb::shape<BoardImpl<Game>::YSIZE, BoardImpl<Game>::XSIZE>>(
-                 b.data(), {BoardImpl<Game>::YSIZE, BoardImpl<Game>::XSIZE});
-           })
+      .def("has_tile", &BoardImpl<Game>::has_tile)
+      .def("occupancy", &occupancy<Game>)
       .def("valid_moves", &BoardImpl<Game>::valid_moves)
       .def("play_move", &BoardImpl<Game>::play_move)
       .def("child", &BoardImpl<Game>::child)

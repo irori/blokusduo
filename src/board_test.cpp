@@ -30,23 +30,6 @@ class MoveCollector : public BoardImpl<Game>::MoveVisitor {
   std::unordered_set<Move, Move::Hash> valid_moves;
 };
 
-template <class Game>
-void verify_key(const BoardImpl<Game>& b) {
-  typename BoardImpl<Game>::Key key;
-  for (int y = 0; y < BoardImpl<Game>::YSIZE; y++) {
-    for (int x = 0; x < BoardImpl<Game>::XSIZE; x++) {
-      int c = b.at(x, y);
-      if (c & BoardImpl<Game>::VIOLET_TILE) key.set(0, x, y);
-      if (c & BoardImpl<Game>::ORANGE_TILE) key.set(1, x, y);
-    }
-  }
-  if (b.did_pass(0)) key.set_pass(0);
-  if (b.did_pass(1)) key.set_pass(1);
-  if (b.player() == 1) key.flip_player();
-
-  EXPECT_EQ(key, b.key());
-}
-
 class InspectableInfluenceBoard : public standard::Board {
  public:
   int influence() const { return eval_influence(); }
@@ -57,17 +40,42 @@ int reference_standard_influence(const standard::Board& board) {
   constexpr int dx[] = {-1, 1, 0, 0};
   constexpr int dy[] = {0, 0, -1, 1};
   for (int player = 0; player < 2; player++) {
-    const uint8_t mask =
-        player == 0 ? standard::Board::VIOLET_MASK | standard::Board::ORANGE_TILE
-                    : standard::Board::ORANGE_MASK | standard::Board::VIOLET_TILE;
-    const uint8_t corner = player == 0 ? standard::Board::VIOLET_CORNER
-                                       : standard::Board::ORANGE_CORNER;
+    bool blocked[standard::Board::YSIZE][standard::Board::XSIZE] = {};
+    bool has_tiles = false;
+    for (int y = 0; y < standard::Board::YSIZE; y++) {
+      for (int x = 0; x < standard::Board::XSIZE; x++) {
+        has_tiles |= board.has_tile(player, x, y);
+        blocked[y][x] =
+            board.has_tile(player, x, y) ||
+            board.has_tile(1 - player, x, y) ||
+            (x > 0 && board.has_tile(player, x - 1, y)) ||
+            (x + 1 < standard::Board::XSIZE &&
+             board.has_tile(player, x + 1, y)) ||
+            (y > 0 && board.has_tile(player, x, y - 1)) ||
+            (y + 1 < standard::Board::YSIZE &&
+             board.has_tile(player, x, y + 1));
+      }
+    }
     bool reached[standard::Board::YSIZE][standard::Board::XSIZE] = {};
     std::queue<std::array<int, 3>> queue;
 
     for (int y = 0; y < standard::Board::YSIZE; y++) {
       for (int x = 0; x < standard::Board::XSIZE; x++) {
-        if ((board.at(x, y) & mask) == corner) {
+        const bool corner =
+            (x > 0 && y > 0 && board.has_tile(player, x - 1, y - 1)) ||
+            (x + 1 < standard::Board::XSIZE && y > 0 &&
+             board.has_tile(player, x + 1, y - 1)) ||
+            (x > 0 && y + 1 < standard::Board::YSIZE &&
+             board.has_tile(player, x - 1, y + 1)) ||
+            (x + 1 < standard::Board::XSIZE &&
+             y + 1 < standard::Board::YSIZE &&
+             board.has_tile(player, x + 1, y + 1));
+        const int start_x = player == 0 ? BlokusDuoStandard::START1X
+                                        : BlokusDuoStandard::START2X;
+        const int start_y = player == 0 ? BlokusDuoStandard::START1Y
+                                        : BlokusDuoStandard::START2Y;
+        if (!blocked[y][x] &&
+            (corner || (!has_tiles && x == start_x && y == start_y))) {
           reached[y][x] = true;
           queue.push({x, y, 0});
           influence[player]++;
@@ -84,7 +92,7 @@ int reference_standard_influence(const standard::Board& board) {
         if (next_x < 0 || next_y < 0 ||
             next_x >= standard::Board::XSIZE ||
             next_y >= standard::Board::YSIZE || reached[next_y][next_x] ||
-            (board.at(next_x, next_y) & mask) != 0)
+            blocked[next_y][next_x])
           continue;
         reached[next_y][next_x] = true;
         queue.push({next_x, next_y, distance + 1});
@@ -226,8 +234,6 @@ TYPED_TEST(BoardTest, RandomPlayout) {
     Move m = *it;
     b.play_move(m);
     // printf("%d %s\n", b.turn(), m.code().c_str());
-
-    verify_key(b);
   }
 }
 

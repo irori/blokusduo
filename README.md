@@ -46,7 +46,7 @@ Install [nanobind](https://github.com/wjakob/nanobind) first, then build and
 install the library:
 
 ```bash
-pip install nanobind
+pip install nanobind numpy
 cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DBUILD_PYTHON=ON
 cmake --build build
 cmake --install build
@@ -70,3 +70,9 @@ while not b.is_game_over():
 print('Violet: %d' % b.score(0))
 print('Orange: %d' % b.score(1))
 ```
+
+`Board.has_tile(player, x, y)` queries one position. `Board.occupancy()`
+returns an independent Boolean NumPy array with shape `(2, YSIZE, XSIZE)`;
+changes to the returned array do not modify the board. Use
+`Board.available_pieces()` for a Boolean snapshot with shape
+`(2, NUM_PIECES)` of the pieces that remain available.
