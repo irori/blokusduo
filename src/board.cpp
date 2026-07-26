@@ -319,110 +319,82 @@ int BoardImpl<BlokusDuoMini>::eval_influence() const {
 
 template <>
 int BoardImpl<BlokusDuoStandard>::eval_influence() const {
-  uint8_t b[16 * 15];
-  uint8_t *influences[2][YSIZE * XSIZE], **pinf, **pnew_inf;
-  int score = 0;
+  using Bits = std::array<uint64_t, 4>;
+  constexpr uint64_t FOUR_ROWS = 0x3fff3fff3fff3fff;
+  constexpr Bits BOARD_MASK = {
+      FOUR_ROWS, FOUR_ROWS, FOUR_ROWS, 0x000000003fff3fff};
 
-  for (int x = 0; x <= XSIZE; x++) b[x] = VIOLET_TILE | ORANGE_TILE;
-  for (int y = 0; y <= YSIZE; y++)
-    b[y * 15 + XSIZE] = VIOLET_TILE | ORANGE_TILE;
-  for (int x = 0; x <= XSIZE; x++) b[225 + x] = VIOLET_TILE | ORANGE_TILE;
+  const auto orthogonal_neighbors = [&BOARD_MASK](const Bits& bits) {
+    Bits result;
+    for (int word = 0; word < 4; word++) {
+      const uint64_t vertical =
+          (bits[word] >> 16) | (bits[word] << 16) |
+          (word > 0 ? bits[word - 1] >> 48 : 0) |
+          (word < 3 ? bits[word + 1] << 48 : 0);
+      result[word] =
+          ((bits[word] << 1) | (bits[word] >> 1) | vertical) &
+          BOARD_MASK[word];
+    }
+    return result;
+  };
+  const auto diagonal_neighbors = [&BOARD_MASK](const Bits& bits) {
+    Bits result;
+    for (int word = 0; word < 4; word++) {
+      const uint64_t vertical =
+          (bits[word] >> 16) | (bits[word] << 16) |
+          (word > 0 ? bits[word - 1] >> 48 : 0) |
+          (word < 3 ? bits[word + 1] << 48 : 0);
+      result[word] = ((vertical << 1) | (vertical >> 1)) & BOARD_MASK[word];
+    }
+    return result;
+  };
 
+  Bits tiles[2] = {};
   for (int player = 0; player < 2; player++) {
-    const uint8_t mask[2] = {VIOLET_MASK | ORANGE_TILE,
-                             ORANGE_MASK | VIOLET_TILE};
-    const uint8_t corner[2] = {VIOLET_CORNER, ORANGE_CORNER};
-
-    pinf = influences[0];
     for (int y = 0; y < YSIZE; y++) {
-      for (int x = 0; x < XSIZE; x++) {
-        b[(y + 1) * 15 + x] = at(x, y) & mask[player];
-        if (b[(y + 1) * 15 + x] == corner[player]) {
-          *pinf++ = &b[(y + 1) * 15 + x];
-          score++;
-        }
-      }
+      tiles[player][y / 4] |=
+          static_cast<uint64_t>(key_.a[player][y] & 0x3fff) << (y % 4 * 16);
     }
-    *pinf = nullptr;
-
-    pinf = influences[0];
-    pnew_inf = influences[1];
-    while (*pinf) {
-      uint8_t* pos = *pinf++;
-      if (pos[-15] == 0) {
-        pos[-15] = 1;
-        *pnew_inf++ = pos - 15;
-        score++;
-      }
-      if (pos[-1] == 0) {
-        pos[-1] = 1;
-        *pnew_inf++ = pos - 1;
-        score++;
-      }
-      if (pos[1] == 0) {
-        pos[1] = 1;
-        *pnew_inf++ = pos + 1;
-        score++;
-      }
-      if (pos[15] == 0) {
-        pos[15] = 1;
-        *pnew_inf++ = pos + 15;
-        score++;
-      }
-    }
-    *pnew_inf = nullptr;
-
-    pinf = influences[1];
-    pnew_inf = influences[0];
-    while (*pinf) {
-      uint8_t* pos = *pinf++;
-      if (pos[-15] == 0) {
-        pos[-15] = 1;
-        *pnew_inf++ = pos - 15;
-        score++;
-      }
-      if (pos[-1] == 0) {
-        pos[-1] = 1;
-        *pnew_inf++ = pos - 1;
-        score++;
-      }
-      if (pos[1] == 0) {
-        pos[1] = 1;
-        *pnew_inf++ = pos + 1;
-        score++;
-      }
-      if (pos[15] == 0) {
-        pos[15] = 1;
-        *pnew_inf++ = pos + 15;
-        score++;
-      }
-    }
-    *pnew_inf = nullptr;
-
-    pinf = influences[0];
-    while (*pinf) {
-      uint8_t* pos = *pinf++;
-      if (pos[-15] == 0) {
-        pos[-15] = 1;
-        score++;
-      }
-      if (pos[-1] == 0) {
-        pos[-1] = 1;
-        score++;
-      }
-      if (pos[1] == 0) {
-        pos[1] = 1;
-        score++;
-      }
-      if (pos[15] == 0) {
-        pos[15] = 1;
-        score++;
-      }
-    }
-
-    score = -score;
   }
-  return score;
+
+  int influence[2] = {};
+  for (int player = 0; player < 2; player++) {
+    Bits edge = orthogonal_neighbors(tiles[player]);
+    Bits corner = diagonal_neighbors(tiles[player]);
+    bool has_tiles = false;
+    for (uint64_t word : tiles[player]) has_tiles |= word != 0;
+    if (!has_tiles) {
+      const int x = player == 0 ? BlokusDuoStandard::START1X
+                                : BlokusDuoStandard::START2X;
+      const int y = player == 0 ? BlokusDuoStandard::START1Y
+                                : BlokusDuoStandard::START2Y;
+      corner[y / 4] |= uint64_t{1} << (y % 4 * 16 + x);
+    }
+
+    Bits traversable;
+    Bits reached;
+    Bits frontier;
+    for (int word = 0; word < 4; word++) {
+      const uint64_t blocked =
+          tiles[player][word] | edge[word] | corner[word] |
+          tiles[1 - player][word];
+      frontier[word] =
+          corner[word] &
+          ~(tiles[player][word] | edge[word] | tiles[1 - player][word]);
+      reached[word] = frontier[word];
+      traversable[word] = ~blocked & BOARD_MASK[word];
+    }
+
+    for (int distance = 0; distance < 3; distance++) {
+      const Bits adjacent = orthogonal_neighbors(frontier);
+      for (int word = 0; word < 4; word++) {
+        frontier[word] = adjacent[word] & traversable[word] & ~reached[word];
+        reached[word] |= frontier[word];
+      }
+    }
+    for (uint64_t word : reached) influence[player] += std::popcount(word);
+  }
+  return influence[0] - influence[1];
 }
 
 // static

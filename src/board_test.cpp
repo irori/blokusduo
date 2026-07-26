@@ -5,6 +5,8 @@
 #include <time.h>
 
 #include <iostream>
+#include <queue>
+#include <random>
 #include <unordered_set>
 
 #include "blokusduo.h"
@@ -43,6 +45,54 @@ void verify_key(const BoardImpl<Game>& b) {
   if (b.player() == 1) key.flip_player();
 
   EXPECT_EQ(key, b.key());
+}
+
+class InspectableInfluenceBoard : public standard::Board {
+ public:
+  int influence() const { return eval_influence(); }
+};
+
+int reference_standard_influence(const standard::Board& board) {
+  int influence[2] = {};
+  constexpr int dx[] = {-1, 1, 0, 0};
+  constexpr int dy[] = {0, 0, -1, 1};
+  for (int player = 0; player < 2; player++) {
+    const uint8_t mask =
+        player == 0 ? standard::Board::VIOLET_MASK | standard::Board::ORANGE_TILE
+                    : standard::Board::ORANGE_MASK | standard::Board::VIOLET_TILE;
+    const uint8_t corner = player == 0 ? standard::Board::VIOLET_CORNER
+                                       : standard::Board::ORANGE_CORNER;
+    bool reached[standard::Board::YSIZE][standard::Board::XSIZE] = {};
+    std::queue<std::array<int, 3>> queue;
+
+    for (int y = 0; y < standard::Board::YSIZE; y++) {
+      for (int x = 0; x < standard::Board::XSIZE; x++) {
+        if ((board.at(x, y) & mask) == corner) {
+          reached[y][x] = true;
+          queue.push({x, y, 0});
+          influence[player]++;
+        }
+      }
+    }
+    while (!queue.empty()) {
+      const auto [x, y, distance] = queue.front();
+      queue.pop();
+      if (distance == 3) continue;
+      for (int direction = 0; direction < 4; direction++) {
+        const int next_x = x + dx[direction];
+        const int next_y = y + dy[direction];
+        if (next_x < 0 || next_y < 0 ||
+            next_x >= standard::Board::XSIZE ||
+            next_y >= standard::Board::YSIZE || reached[next_y][next_x] ||
+            (board.at(next_x, next_y) & mask) != 0)
+          continue;
+        reached[next_y][next_x] = true;
+        queue.push({next_x, next_y, distance + 1});
+        influence[player]++;
+      }
+    }
+  }
+  return influence[0] - influence[1];
 }
 
 TEST(Move, Move) {
@@ -91,6 +141,19 @@ TEST(Move, Move) {
 TEST(Board, AllPossibleMoves) {
   EXPECT_EQ(1270, mini::Board::all_possible_moves().size());
   EXPECT_EQ(13730, standard::Board::all_possible_moves().size());
+}
+
+TEST(Board, OptimizedStandardEvaluationMatchesReference) {
+  std::mt19937 random(20260726);
+  for (int game = 0; game < 20; game++) {
+    InspectableInfluenceBoard board;
+    while (!board.is_game_over()) {
+      EXPECT_EQ(reference_standard_influence(board), board.influence());
+      const std::vector<Move> moves = board.valid_moves();
+      board.play_move(moves[random() % moves.size()]);
+    }
+    EXPECT_EQ(reference_standard_influence(board), board.influence());
+  }
 }
 
 template <typename T>
