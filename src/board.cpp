@@ -10,6 +10,11 @@
 namespace blokusduo {
 namespace {
 
+constexpr int PIECE_EVAL_VALUES[] = {
+    2,  4,  6,  6,  10, 10, 10, 10, 10, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+};
+
 struct DiagPoint {
   int x, y, orientation;
 };
@@ -128,6 +133,7 @@ void BoardImpl<Game>::play_move(Move move) {
     pieces_[player_] |= PASSED;
     key_.set_pass(player_);
   } else {
+    piece_eval_ += (player_ == 0 ? 1 : -1) * PIECE_EVAL_VALUES[move.piece_id()];
     pieces_[player_] |= 1 << move.piece_id();
     auto& rot = block_set[move.piece_id()].rotations[move.orientation()];
     int px = move.x() + rot.offset_x;
@@ -279,21 +285,6 @@ int BoardImpl<Game>::score(int player) const noexcept {
 
   for (int i = 0; i < NUM_PIECES; i++) {
     if (!is_piece_available(player, i)) score += block_set[i].size;
-  }
-  return score;
-}
-
-template <class Game>
-int BoardImpl<Game>::eval_pieces() const {
-  constexpr int table[] = {
-      2,  4,  6,  6,  10, 10, 10, 10, 10, 16, 16,
-      16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
-  };
-  int score = 0;
-
-  for (int i = 0; i < NUM_PIECES; i++) {
-    if (is_piece_available(0, i)) score -= table[i];
-    if (is_piece_available(1, i)) score += table[i];
   }
   return score;
 }

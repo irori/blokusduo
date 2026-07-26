@@ -95,6 +95,24 @@ int reference_standard_influence(const standard::Board& board) {
   return influence[0] - influence[1];
 }
 
+class InspectablePieceBoard : public standard::Board {
+ public:
+  int piece_evaluation() const { return piece_eval_; }
+};
+
+int reference_piece_evaluation(const standard::Board& board) {
+  constexpr int piece_values[] = {
+      2,  4,  6,  6,  10, 10, 10, 10, 10, 16, 16,
+      16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+  };
+  int score = 0;
+  for (int piece = 0; piece < BlokusDuoStandard::NUM_PIECES; piece++) {
+    if (board.is_piece_available(0, piece)) score -= piece_values[piece];
+    if (board.is_piece_available(1, piece)) score += piece_values[piece];
+  }
+  return score;
+}
+
 TEST(Move, Move) {
   EXPECT_FALSE(Move().is_valid());
   EXPECT_FALSE(Move().is_pass());
@@ -153,6 +171,19 @@ TEST(Board, OptimizedStandardEvaluationMatchesReference) {
       board.play_move(moves[random() % moves.size()]);
     }
     EXPECT_EQ(reference_standard_influence(board), board.influence());
+  }
+}
+
+TEST(Board, CachedPieceEvaluationMatchesReference) {
+  std::mt19937 random(20260726);
+  for (int game = 0; game < 20; game++) {
+    InspectablePieceBoard board;
+    while (!board.is_game_over()) {
+      EXPECT_EQ(reference_piece_evaluation(board), board.piece_evaluation());
+      const std::vector<Move> moves = board.valid_moves();
+      board.play_move(moves[random() % moves.size()]);
+    }
+    EXPECT_EQ(reference_piece_evaluation(board), board.piece_evaluation());
   }
 }
 

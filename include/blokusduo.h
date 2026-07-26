@@ -240,7 +240,7 @@ class BoardImpl {
 
   // Heuristically evaluates the current board state. Higher values are better
   // for violet, lower values are better for orange.
-  int evaluate() const { return eval_pieces() + eval_influence(); }
+  int evaluate() const { return piece_eval_ + eval_influence(); }
 
   // Same as evaluate(), but higher values are better for the current player.
   int nega_eval() const { return is_violet_turn() ? evaluate() : -evaluate(); }
@@ -261,11 +261,11 @@ class BoardImpl {
   Key key_;
   uint8_t cells[YSIZE][XSIZE] = {};
   uint32_t pieces_[2] = {0, 0};
+  int piece_eval_ = 0;
   int turn_ = 0;
   int player_ = 0;
 
   bool placeable(int px, int py, const Piece* piece) const noexcept;
-  int eval_pieces() const;
   int eval_influence() const;
 };
 
