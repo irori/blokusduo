@@ -3,6 +3,9 @@ project(blokusduo)
 
 set(CMAKE_CXX_STANDARD 20)
 
+option(BLOKUSDUO_ENABLE_NATIVE
+  "Optimize blokusduo for the CPU used to build it" ON)
+
 find_package(Python 3.8 REQUIRED Interpreter OPTIONAL_COMPONENTS Development.Module)
 
 add_custom_command(
@@ -18,6 +21,25 @@ add_library(blokusduo STATIC
 )
 target_include_directories(blokusduo PUBLIC include PRIVATE src)
 set_target_properties(blokusduo PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+if(BLOKUSDUO_ENABLE_NATIVE)
+  include(CheckCXXCompilerFlag)
+  if(MSVC)
+    check_cxx_compiler_flag("/arch:AVX2" BLOKUSDUO_HAS_NATIVE_FLAG)
+    set(BLOKUSDUO_NATIVE_FLAG "/arch:AVX2")
+  else()
+    check_cxx_compiler_flag("-march=native" BLOKUSDUO_HAS_NATIVE_FLAG)
+    set(BLOKUSDUO_NATIVE_FLAG "-march=native")
+  endif()
+
+  if(BLOKUSDUO_HAS_NATIVE_FLAG)
+    target_compile_options(blokusduo PRIVATE ${BLOKUSDUO_NATIVE_FLAG})
+  else()
+    message(WARNING
+      "BLOKUSDUO_ENABLE_NATIVE is ON, but the compiler does not support "
+      "a native architecture flag")
+  endif()
+endif()
 
 find_package(GTest)
 if (GTest_FOUND)

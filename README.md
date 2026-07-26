@@ -7,6 +7,15 @@ and also provides Python bindings.
 
 CMake 3.18 or later is required.
 
+CPU-specific optimizations are enabled by default with
+`BLOKUSDUO_ENABLE_NATIVE=ON`. This uses `-march=native` with GCC and Clang, or
+`/arch:AVX2` with MSVC. Disable it when cross-compiling or building binaries
+that need to run on other CPUs:
+
+```bash
+cmake -B build -S . -DBLOKUSDUO_ENABLE_NATIVE=OFF
+```
+
 ### For C++ users
 
 If you are using C++, you can easily integrate this library into your project
