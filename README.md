@@ -16,6 +16,16 @@ that need to run on other CPUs:
 cmake -B build -S . -DBLOKUSDUO_ENABLE_NATIVE=OFF
 ```
 
+For an Emscripten build using WebAssembly SIMD, enable
+`BLOKUSDUO_ENABLE_WASM_SIMD`. The resulting module requires a runtime with
+WebAssembly SIMD support:
+
+```bash
+emcmake cmake -B build-wasm -S . \
+  -DBLOKUSDUO_ENABLE_WASM_SIMD=ON
+cmake --build build-wasm
+```
+
 ### For C++ users
 
 If you are using C++, you can easily integrate this library into your project

@@ -5,6 +5,8 @@ set(CMAKE_CXX_STANDARD 20)
 
 option(BLOKUSDUO_ENABLE_NATIVE
   "Optimize blokusduo for the CPU used to build it" ON)
+option(BLOKUSDUO_ENABLE_WASM_SIMD
+  "Use WebAssembly SIMD instructions when building with Emscripten" OFF)
 
 find_package(Python 3.9 REQUIRED Interpreter OPTIONAL_COMPONENTS Development.Module)
 
@@ -22,7 +24,16 @@ add_library(blokusduo STATIC
 target_include_directories(blokusduo PUBLIC include PRIVATE src)
 set_target_properties(blokusduo PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-if(BLOKUSDUO_ENABLE_NATIVE)
+if(BLOKUSDUO_ENABLE_WASM_SIMD)
+  if(NOT EMSCRIPTEN)
+    message(FATAL_ERROR
+      "BLOKUSDUO_ENABLE_WASM_SIMD requires the Emscripten toolchain")
+  endif()
+  target_compile_options(blokusduo PUBLIC "-msimd128")
+  target_link_options(blokusduo INTERFACE "-msimd128")
+endif()
+
+if(BLOKUSDUO_ENABLE_NATIVE AND NOT EMSCRIPTEN)
   include(CheckCXXCompilerFlag)
   if(MSVC)
     check_cxx_compiler_flag("/arch:AVX2" BLOKUSDUO_HAS_NATIVE_FLAG)

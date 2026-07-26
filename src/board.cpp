@@ -4,6 +4,12 @@
 
 #include <bit>
 
+#if defined(__AVX2__)
+#include <immintrin.h>
+#elif defined(__ARM_NEON) || defined(__wasm_simd128__)
+#include "simd128.h"
+#endif
+
 #include "blokusduo.h"
 #include "piece.h"
 
@@ -345,8 +351,246 @@ int BoardImpl<BlokusDuoMini>::eval_influence() const {
   return std::popcount(vinfl) - std::popcount(oinfl);
 }
 
+// Estimates each player's influence over open cells. For each player, first
+// exclude occupied cells and cells sharing an edge with one of their tiles,
+// then seed every unblocked diagonal neighbor (or the starting point before
+// the first move). Influence consists of those seeds and all cells reachable
+// from them through unblocked orthogonal moves in at most three steps. The
+// returned value is violet's count minus orange's count.
+//
+// Every implementation below follows that algorithm with a different packed
+// board representation. The neighbor helpers perform bit-parallel shifts in
+// the x and y directions; the main loop builds the blocked set and runs the
+// three expansion steps.
 template <>
 int BoardImpl<BlokusDuoStandard>::eval_influence() const {
+#if defined(__AVX2__)
+  // Pack all 14 rows into one 256-bit register. Each 64-bit lane holds four
+  // 16-bit row slots: 14 board bits followed by two zero padding bits. Shifts
+  // by one move horizontally, shifts by 16 move vertically within a lane, and
+  // 64-bit lane permutations carry rows across lane boundaries. The last
+  // 64-bit lane contains only rows 12 and 13.
+  constexpr uint64_t FOUR_ROWS = 0x3fff3fff3fff3fff;
+  const __m256i board_mask = _mm256_set_epi64x(
+      0x000000003fff3fff, FOUR_ROWS, FOUR_ROWS, FOUR_ROWS);
+  const __m256i no_low_word =
+      _mm256_set_epi64x(-1, -1, -1, 0);
+  const __m256i no_high_word =
+      _mm256_set_epi64x(0, -1, -1, -1);
+
+  const auto vertical_neighbors = [&](const __m256i bits) {
+    const __m256i previous_words = _mm256_and_si256(
+        _mm256_permute4x64_epi64(bits, _MM_SHUFFLE(2, 1, 0, 0)),
+        no_low_word);
+    const __m256i next_words = _mm256_and_si256(
+        _mm256_permute4x64_epi64(bits, _MM_SHUFFLE(3, 3, 2, 1)),
+        no_high_word);
+    return _mm256_or_si256(
+        _mm256_or_si256(_mm256_srli_epi64(bits, 16),
+                        _mm256_slli_epi64(bits, 16)),
+        _mm256_or_si256(_mm256_srli_epi64(previous_words, 48),
+                        _mm256_slli_epi64(next_words, 48)));
+  };
+  const auto orthogonal_neighbors = [&](const __m256i bits) {
+    return _mm256_and_si256(
+        _mm256_or_si256(
+            vertical_neighbors(bits),
+            _mm256_or_si256(_mm256_slli_epi64(bits, 1),
+                            _mm256_srli_epi64(bits, 1))),
+        board_mask);
+  };
+  const auto diagonal_neighbors = [&](const __m256i bits) {
+    const __m256i vertical = vertical_neighbors(bits);
+    return _mm256_and_si256(
+        _mm256_or_si256(_mm256_slli_epi64(vertical, 1),
+                        _mm256_srli_epi64(vertical, 1)),
+        board_mask);
+  };
+
+  __m256i tiles[2];
+  for (int player = 0; player < 2; player++) {
+    // Loading rows 6-13 lets the shift zero-pad the upper lane.
+    const __m128i first_eight = _mm_loadu_si128(
+        reinterpret_cast<const __m128i*>(key_.a[player]));
+    const __m128i last_eight = _mm_loadu_si128(
+        reinterpret_cast<const __m128i*>(key_.a[player] + 6));
+    const __m128i last_six = _mm_srli_si128(last_eight, 4);
+    tiles[player] = _mm256_and_si256(
+        _mm256_inserti128_si256(_mm256_castsi128_si256(first_eight),
+                                last_six, 1),
+        board_mask);
+  }
+
+  int influence[2] = {};
+  for (int player = 0; player < 2; player++) {
+    const __m256i edge = orthogonal_neighbors(tiles[player]);
+    __m256i corner = diagonal_neighbors(tiles[player]);
+    if (_mm256_testz_si256(tiles[player], tiles[player])) {
+      const __m256i start =
+          player == 0
+              ? _mm256_set_epi64x(0, 0, uint64_t{1} << 4, 0)
+              : _mm256_set_epi64x(0, uint64_t{1} << 25, 0, 0);
+      corner = _mm256_or_si256(corner, start);
+    }
+
+    const __m256i blocked_without_corner = _mm256_or_si256(
+        _mm256_or_si256(tiles[player], edge), tiles[1 - player]);
+    const __m256i blocked =
+        _mm256_or_si256(blocked_without_corner, corner);
+    __m256i frontier =
+        _mm256_andnot_si256(blocked_without_corner, corner);
+    __m256i reached = frontier;
+    const __m256i traversable = _mm256_andnot_si256(blocked, board_mask);
+
+    for (int distance = 0; distance < 3; distance++) {
+      const __m256i adjacent = orthogonal_neighbors(frontier);
+      frontier = _mm256_andnot_si256(
+          reached, _mm256_and_si256(adjacent, traversable));
+      reached = _mm256_or_si256(reached, frontier);
+    }
+
+#if defined(__AVX512VPOPCNTDQ__) && defined(__AVX512VL__)
+    // Use vector popcount when the AVX-512 extension is available for 256-bit
+    // registers; otherwise store the four words and count them scalarly.
+    const __m256i counts = _mm256_popcnt_epi64(reached);
+    const __m128i pair_sums =
+        _mm_add_epi64(_mm256_castsi256_si128(counts),
+                      _mm256_extracti128_si256(counts, 1));
+    influence[player] =
+        _mm_cvtsi128_si64(pair_sums) + _mm_extract_epi64(pair_sums, 1);
+#else
+    alignas(32) uint64_t words[4];
+    _mm256_store_si256(reinterpret_cast<__m256i*>(words), reached);
+    for (uint64_t word : words) influence[player] += std::popcount(word);
+#endif
+  }
+  return influence[0] - influence[1];
+#elif defined(__ARM_NEON) || defined(__wasm_simd128__)
+  // Use the common 128-bit backend for both NEON and WebAssembly SIMD. Each
+  // 16-bit lane represents one 14-bit board row, so rows 0-7 occupy `low` and
+  // rows 8-13 occupy the first six lanes of `high`; its last two lanes are
+  // masked out. Per-lane bit shifts move horizontally, while align_right
+  // shifts whole rows and carries them between the two registers.
+  struct SimdRows {
+    simd128::U16x8 low;
+    simd128::U16x8 high;
+  };
+
+  const simd128::U16x8 zeros = simd128::zero();
+  const SimdRows board_mask = {
+      simd128::splat(0x3fff),
+      simd128::replace_lane<7>(
+          simd128::replace_lane<6>(simd128::splat(0x3fff), 0), 0)};
+
+  const auto vertical_neighbors = [zeros](const SimdRows& rows) {
+    const simd128::U16x8 previous_low =
+        simd128::align_right<7>(zeros, rows.low);
+    const simd128::U16x8 next_low =
+        simd128::align_right<1>(rows.low, rows.high);
+    const simd128::U16x8 previous_high =
+        simd128::align_right<7>(rows.low, rows.high);
+    const simd128::U16x8 next_high =
+        simd128::align_right<1>(rows.high, zeros);
+    return SimdRows{simd128::bit_or(previous_low, next_low),
+                    simd128::bit_or(previous_high, next_high)};
+  };
+  const auto orthogonal_neighbors =
+      [&board_mask, &vertical_neighbors](const SimdRows& rows) {
+        const SimdRows vertical = vertical_neighbors(rows);
+        return SimdRows{
+            simd128::bit_and(
+                simd128::bit_or(
+                    vertical.low,
+                    simd128::bit_or(simd128::shift_left<1>(rows.low),
+                                    simd128::shift_right<1>(rows.low))),
+                board_mask.low),
+            simd128::bit_and(
+                simd128::bit_or(
+                    vertical.high,
+                    simd128::bit_or(simd128::shift_left<1>(rows.high),
+                                    simd128::shift_right<1>(rows.high))),
+                board_mask.high)};
+      };
+  const auto diagonal_neighbors =
+      [&board_mask, &vertical_neighbors](const SimdRows& rows) {
+        const SimdRows vertical = vertical_neighbors(rows);
+        return SimdRows{
+            simd128::bit_and(
+                simd128::bit_or(simd128::shift_left<1>(vertical.low),
+                                simd128::shift_right<1>(vertical.low)),
+                board_mask.low),
+            simd128::bit_and(
+                simd128::bit_or(simd128::shift_left<1>(vertical.high),
+                                simd128::shift_right<1>(vertical.high)),
+                board_mask.high)};
+      };
+
+  SimdRows tiles[2];
+  for (int player = 0; player < 2; player++) {
+    const simd128::U16x8 first_eight = simd128::load(key_.a[player]);
+    // Start at row 6 so the load stays within the 14-row array, then discard
+    // its first two rows and shift zeros into the unused positions.
+    const simd128::U16x8 last_eight =
+        simd128::load(key_.a[player] + 6);
+    const simd128::U16x8 last_six =
+        simd128::align_right<2>(last_eight, zeros);
+    tiles[player] = {
+        simd128::bit_and(first_eight, board_mask.low),
+        simd128::bit_and(last_six, board_mask.high)};
+  }
+
+  int influence[2] = {};
+  for (int player = 0; player < 2; player++) {
+    const SimdRows edge = orthogonal_neighbors(tiles[player]);
+    SimdRows corner = diagonal_neighbors(tiles[player]);
+    if (!simd128::any_true(
+            simd128::bit_or(tiles[player].low, tiles[player].high))) {
+      if (player == 0) {
+        corner.low =
+            simd128::or_lane<4>(corner.low, uint16_t{1} << 4);
+      } else {
+        corner.high =
+            simd128::or_lane<1>(corner.high, uint16_t{1} << 9);
+      }
+    }
+
+    const SimdRows blocked_without_corner = {
+        simd128::bit_or(
+            simd128::bit_or(tiles[player].low, edge.low),
+            tiles[1 - player].low),
+        simd128::bit_or(
+            simd128::bit_or(tiles[player].high, edge.high),
+            tiles[1 - player].high)};
+    const SimdRows blocked = {
+        simd128::bit_or(blocked_without_corner.low, corner.low),
+        simd128::bit_or(blocked_without_corner.high, corner.high)};
+    SimdRows frontier = {
+        simd128::and_not(corner.low, blocked_without_corner.low),
+        simd128::and_not(corner.high, blocked_without_corner.high)};
+    SimdRows reached = frontier;
+    const SimdRows traversable = {
+        simd128::and_not(board_mask.low, blocked.low),
+        simd128::and_not(board_mask.high, blocked.high)};
+
+    for (int distance = 0; distance < 3; distance++) {
+      const SimdRows adjacent = orthogonal_neighbors(frontier);
+      frontier = {
+          simd128::and_not(
+              simd128::bit_and(adjacent.low, traversable.low), reached.low),
+          simd128::and_not(
+              simd128::bit_and(adjacent.high, traversable.high), reached.high)};
+      reached = {simd128::bit_or(reached.low, frontier.low),
+                 simd128::bit_or(reached.high, frontier.high)};
+    }
+
+    influence[player] = simd128::popcount_sum(reached.low, reached.high);
+  }
+  return influence[0] - influence[1];
+#else
+  // Use the same four-word packing as the AVX2 branch, but operate on scalar
+  // 64-bit values. Each word holds four 16-bit row slots with two padding bits
+  // per row; explicit neighboring-word terms carry vertical shifts across
+  // word boundaries.
   using Bits = std::array<uint64_t, 4>;
   constexpr uint64_t FOUR_ROWS = 0x3fff3fff3fff3fff;
   constexpr Bits BOARD_MASK = {
@@ -423,6 +667,7 @@ int BoardImpl<BlokusDuoStandard>::eval_influence() const {
     for (uint64_t word : reached) influence[player] += std::popcount(word);
   }
   return influence[0] - influence[1];
+#endif
 }
 
 // static
