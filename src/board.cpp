@@ -209,9 +209,10 @@ bool BoardImpl<Game>::visit_moves(MoveVisitor* visitor) const {
     return true;
   }
 
-  // Generate corner candidates and test placements one board row at a time.
+  // Generate corner candidates and test placements with packed board rows.
   constexpr uint16_t ROW_MASK = (uint16_t{1} << XSIZE) - 1;
-  uint16_t blocked_rows[YSIZE];
+  // Padding keeps four-row loads within the array at the bottom edge.
+  uint16_t blocked_rows[YSIZE + 3] = {};
   uint16_t edge_rows[YSIZE];
   uint16_t own_rows[YSIZE];
   for (int y = 0; y < YSIZE; y++) {
@@ -259,6 +260,10 @@ bool BoardImpl<Game>::visit_moves(MoveVisitor* visitor) const {
     const int min_y = -piece->miny;
     const int max_y = YSIZE - 1 - piece->maxy;
     uint16_t checked[YSIZE] = {};
+    const uint8_t* rows = piece_row_masks[piece->id];
+    const uint64_t first_four_rows =
+        uint64_t{rows[0]} | (uint64_t{rows[1]} << 16) |
+        (uint64_t{rows[2]} << 32) | (uint64_t{rows[3]} << 48);
     for (diag_point = diag_neighbors; diag_point->x >= 0; diag_point++) {
       const int orientation = diag_point->orientation;
       for (int i = 0; i < piece->nr_corners[orientation]; i++) {
@@ -272,16 +277,16 @@ bool BoardImpl<Game>::visit_moves(MoveVisitor* visitor) const {
           continue;
         checked[y] |= uint16_t{1} << x;
 
-        bool placeable = true;
         const int piece_x = x + piece->minx;
         const int piece_y = y + piece->miny;
-        const uint8_t* rows = piece_row_masks[piece->id];
-        for (int row = 0; row <= piece->maxy - piece->miny; row++) {
-          if (blocked_rows[piece_y + row] & (rows[row] << piece_x)) {
-            placeable = false;
-            break;
-          }
-        }
+        // Four 16-bit lanes cover every piece except the five-high bar.
+        uint64_t first_four_blocked;
+        memcpy(&first_four_blocked, blocked_rows + piece_y,
+               sizeof(first_four_blocked));
+        const bool placeable =
+            (first_four_blocked & (first_four_rows << piece_x)) == 0 &&
+            (rows[4] == 0 ||
+             (blocked_rows[piece_y + 4] & (rows[4] << piece_x)) == 0);
         if (placeable) {
           if (!visitor->visit_move(Move(x, y, piece->id))) return false;
           nmove++;
