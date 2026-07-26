@@ -33,7 +33,6 @@ using Hash =
 template <class Game>
 struct Child {
   Child(const BoardImpl<Game>& b, Move m, Hash<Game>* hash);
-  bool operator<(const Child& rhs) const { return score < rhs.score; }
   BoardImpl<Game> board;
   int score;
   Move move;
@@ -182,23 +181,29 @@ int negascout_rec(const BoardImpl<Game>& node, int depth, int alpha, int beta,
   ChildCollector<Game> collector(node, prev_hash + 1);
   node.visit_moves(&collector);
   std::vector<Child<Game>> children = std::move(collector.children);
-  std::sort(children.begin(), children.end());
+  std::vector<Child<Game>*> ordered_children;
+  ordered_children.reserve(children.size());
+  for (Child<Game>& child : children) ordered_children.push_back(&child);
+  std::sort(ordered_children.begin(), ordered_children.end(),
+            [](const Child<Game>* lhs, const Child<Game>* rhs) {
+              return lhs->score < rhs->score;
+            });
 
   bool found_pv = false;
   int score_max = -INT_MAX;
   int a = alpha;
 
-  for (auto& child : children) {
+  for (const Child<Game>* child : ordered_children) {
     int score;
     if (found_pv) {
-      score = -negascout_rec(child.board, depth - 1, -a - 1, -a, nullptr,
+      score = -negascout_rec(child->board, depth - 1, -a - 1, -a, nullptr,
                              hash + 1, prev_hash + 1, hash_depth - 1);
       if (score > a && score < beta) {
-        score = -negascout_rec(child.board, depth - 1, -beta, -score, nullptr,
+        score = -negascout_rec(child->board, depth - 1, -beta, -score, nullptr,
                                hash + 1, prev_hash + 1, hash_depth - 1);
       }
     } else {
-      score = -negascout_rec(child.board, depth - 1, -beta, -a, nullptr,
+      score = -negascout_rec(child->board, depth - 1, -beta, -a, nullptr,
                              hash + 1, prev_hash + 1, hash_depth - 1);
     }
 
@@ -211,7 +216,7 @@ int negascout_rec(const BoardImpl<Game>& node, int depth, int alpha, int beta,
       if (score > a) a = score;
       if (score > alpha) {
         found_pv = true;
-        if (best_move) *best_move = child.move;
+        if (best_move) *best_move = child->move;
       }
       score_max = score;
     }
