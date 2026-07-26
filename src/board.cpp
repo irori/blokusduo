@@ -118,11 +118,20 @@ bool BoardImpl<Game>::is_valid_move(Move move) const {
       !placeable(px, py, piece))
     return false;
 
-  for (int i = 0; i < piece->size; i++) {
-    int x = px + piece->coords[i].x;
-    int y = py + piece->coords[i].y;
-    if (at(x, y) & (is_violet_turn() ? VIOLET_CORNER : ORANGE_CORNER))
-      return true;
+  constexpr uint16_t ROW_MASK = (uint16_t{1} << XSIZE) - 1;
+  const int piece_x = px + piece->minx;
+  const int piece_y = py + piece->miny;
+  const uint8_t* rows = piece_row_masks[piece->id];
+  const int start_x = is_violet_turn() ? Game::START1X : Game::START2X;
+  const int start_y = is_violet_turn() ? Game::START1Y : Game::START2Y;
+  for (int row = 0; row <= piece->maxy - piece->miny; row++) {
+    const int y = piece_y + row;
+    const uint16_t vertical =
+        (y > 0 ? key_.a[player_][y - 1] & ROW_MASK : 0) |
+        (y + 1 < YSIZE ? key_.a[player_][y + 1] & ROW_MASK : 0);
+    uint16_t corners = ((vertical << 1) | (vertical >> 1)) & ROW_MASK;
+    if (y == start_y) corners |= uint16_t{1} << start_x;
+    if (corners & (static_cast<uint16_t>(rows[row]) << piece_x)) return true;
   }
   return false;
 }
@@ -167,13 +176,21 @@ void BoardImpl<Game>::play_move(Move move) {
 template <class Game>
 bool BoardImpl<Game>::placeable(int px, int py,
                                 const Piece* piece) const noexcept {
-  uint8_t mask = is_violet_turn() ? VIOLET_TILE | VIOLET_EDGE | ORANGE_TILE
-                                  : ORANGE_TILE | ORANGE_EDGE | VIOLET_TILE;
-
-  for (int i = 0; i < piece->size; i++) {
-    int x = px + piece->coords[i].x;
-    int y = py + piece->coords[i].y;
-    if (at(x, y) & mask) return false;
+  constexpr uint16_t ROW_MASK = (uint16_t{1} << XSIZE) - 1;
+  const int piece_x = px + piece->minx;
+  const int piece_y = py + piece->miny;
+  const uint8_t* rows = piece_row_masks[piece->id];
+  for (int row = 0; row <= piece->maxy - piece->miny; row++) {
+    const int y = piece_y + row;
+    const uint16_t own = key_.a[player_][y] & ROW_MASK;
+    const uint16_t vertical =
+        (y > 0 ? key_.a[player_][y - 1] & ROW_MASK : 0) |
+        (y + 1 < YSIZE ? key_.a[player_][y + 1] & ROW_MASK : 0);
+    const uint16_t edge =
+        ((own << 1) | (own >> 1) | vertical) & ROW_MASK;
+    const uint16_t blocked =
+        own | edge | (key_.a[opponent()][y] & ROW_MASK);
+    if (blocked & (static_cast<uint16_t>(rows[row]) << piece_x)) return false;
   }
   return true;
 }
