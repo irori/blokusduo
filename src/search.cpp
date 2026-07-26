@@ -32,15 +32,22 @@ using Hash =
 
 template <class Game>
 struct Child {
-  Child(const BoardImpl<Game>& b, Move m, Hash<Game>* hash);
+  Child(const BoardImpl<Game>& b, Move m, Hash<Game>* hash,
+        bool use_full_evaluation);
   BoardImpl<Game> board;
   int score;
   Move move;
 };
 
 template <class Game>
-Child<Game>::Child(const BoardImpl<Game>& b, Move m, Hash<Game>* hash)
+Child<Game>::Child(const BoardImpl<Game>& b, Move m, Hash<Game>* hash,
+                   bool use_full_evaluation)
     : board(b.child(m)), move(m) {
+  // Use piece size as a cheap ordering heuristic near the leaves.
+  const auto evaluate_for_ordering = [&] {
+    if (use_full_evaluation) return board.nega_eval();
+    return move.is_pass() ? 0 : -block_set[move.piece_id()].size;
+  };
   auto i = hash->find(board.key());
   if (i != hash->end()) {
     int a = i->second.first;
@@ -48,9 +55,9 @@ Child<Game>::Child(const BoardImpl<Game>& b, Move m, Hash<Game>* hash)
     if (a > -INT_MAX && b < INT_MAX)
       score = (a + b) / 2 - 1000;
     else
-      score = board.nega_eval();
+      score = evaluate_for_ordering();
   } else
-    score = board.nega_eval();
+    score = evaluate_for_ordering();
 }
 
 template <class Game>
@@ -74,8 +81,9 @@ bool move_filter<BlokusDuoStandard>(
 template <class Game>
 class ChildCollector : public BoardImpl<Game>::MoveVisitor {
  public:
-  ChildCollector(const BoardImpl<Game>& b, Hash<Game>* h)
-      : board(b), hash(h) {
+  ChildCollector(const BoardImpl<Game>& b, Hash<Game>* h,
+                 bool use_full_evaluation)
+      : board(b), hash(h), use_full_evaluation(use_full_evaluation) {
     children.reserve(Game::CHILD_RESERVE);
   }
   bool filter(char piece, int orientation,
@@ -83,11 +91,12 @@ class ChildCollector : public BoardImpl<Game>::MoveVisitor {
     return move_filter(piece, orientation, board);
   }
   bool visit_move(Move m) override {
-    children.emplace_back(board, m, hash);
+    children.emplace_back(board, m, hash, use_full_evaluation);
     return true;
   }
   const BoardImpl<Game>& board;
   Hash<Game>* hash;
+  bool use_full_evaluation;
   std::vector<Child<Game>> children;
 };
 
@@ -181,7 +190,11 @@ int negascout_rec(const BoardImpl<Game>& node, int depth, int alpha, int beta,
 
 #endif  // USE_PROBCUT
 
-  ChildCollector<Game> collector(node, prev_hash + 1);
+  // Territory evaluation costs more than the improved move ordering saves
+  // near the leaves. Keep it at the root and at internal nodes with at least
+  // three plies left, where it has the most impact on pruning.
+  const bool use_full_evaluation = depth > 2 || best_move != nullptr;
+  ChildCollector<Game> collector(node, prev_hash + 1, use_full_evaluation);
   node.visit_moves(&collector);
   std::vector<Child<Game>> children = std::move(collector.children);
   std::vector<Child<Game>*> ordered_children;
