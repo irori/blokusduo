@@ -74,7 +74,10 @@ bool move_filter<BlokusDuoStandard>(
 template <class Game>
 class ChildCollector : public BoardImpl<Game>::MoveVisitor {
  public:
-  ChildCollector(const BoardImpl<Game>& b, Hash<Game>* h) : board(b), hash(h) {}
+  ChildCollector(const BoardImpl<Game>& b, Hash<Game>* h)
+      : board(b), hash(h) {
+    children.reserve(Game::CHILD_RESERVE);
+  }
   bool filter(char piece, int orientation,
               const BoardImpl<Game>& board) noexcept override {
     return move_filter(piece, orientation, board);

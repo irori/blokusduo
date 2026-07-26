@@ -78,6 +78,7 @@ class BlokusDuoStandard {
   constexpr static int NUM_ORIENTED_PIECES = 91;
   constexpr static int XSIZE = 14;
   constexpr static int YSIZE = 14;
+  constexpr static int CHILD_RESERVE = 128;
   constexpr static int START1X = 4;
   constexpr static int START1Y = 4;
   constexpr static int START2X = 9;
@@ -115,6 +116,7 @@ class BlokusDuoMini {
   constexpr static int NUM_ORIENTED_PIECES = 28;
   constexpr static int XSIZE = 8;
   constexpr static int YSIZE = 8;
+  constexpr static int CHILD_RESERVE = 32;
   constexpr static int START1X = 2;
   constexpr static int START1Y = 2;
   constexpr static int START2X = 5;
