@@ -21,6 +21,10 @@ class Piece:
         self.min_y = min(y for (x, y) in self.coords)
         self.max_x = max(x for (x, y) in self.coords)
         self.max_y = max(y for (x, y) in self.coords)
+        self.row_masks = [
+            sum(1 << (x - self.min_x) for (x, cy) in self.coords if cy == y)
+            for y in range(self.min_y, self.max_y + 1)
+        ]
 
 class Block:
     def __init__(self, name, *coords):
@@ -101,6 +105,7 @@ def generate_cpp():
     print('namespace {')
     print()
     pieces = []
+    row_masks = [[0] * 5 for _ in range(len(BLOCK_SET) * 8)]
     for id, blk in enumerate(BLOCK_SET):
         pieces.insert(0, [])
         for piece in blk:
@@ -110,9 +115,17 @@ def generate_cpp():
                   piece.min_x, piece.min_y, piece.max_x, piece.max_y]
             print(f"const Piece {piece.name} = {{{', '.join(map(str, fs))}}};")
             pieces[0].append(('&' + piece.name, piece.size))
+            orientation_id = id << 3 | piece.orientation
+            row_masks[orientation_id][:len(piece.row_masks)] = piece.row_masks
     pieces = [item for sublist in pieces for item in sublist]
     print()
     print('}  // namespace')
+    print()
+    print("const uint8_t piece_row_masks[][5] = {")
+    for start in range(0, len(row_masks), 8):
+        values = ', '.join(to_c(masks) for masks in row_masks[start:start + 8])
+        print(f"  {values},")
+    print("};")
     print()
     print("const std::array<const Piece*, BlokusDuoMini::NUM_ORIENTED_PIECES> BlokusDuoMini::piece_set = {")
     print(f"  {', '.join([e for (e, n) in pieces if n <= 4])}")

@@ -210,47 +210,80 @@ bool BoardImpl<Game>::visit_moves(MoveVisitor* visitor) const {
     return true;
   }
 
-  DiagPoint diag_neighbors[100], *diag_point;
-  {
-    uint8_t corner_mask = is_violet_turn() ? VIOLET_MASK | ORANGE_TILE
-                                           : ORANGE_MASK | VIOLET_TILE;
-    uint8_t corner_bit = is_violet_turn() ? VIOLET_CORNER : ORANGE_CORNER;
-    uint8_t edge_bit = is_violet_turn() ? VIOLET_EDGE : ORANGE_EDGE;
-
-    diag_point = diag_neighbors;
-    for (int ey = 0; ey < YSIZE; ey++) {
-      for (int ex = 0; ex < XSIZE; ex++) {
-        if ((at(ex, ey) & corner_mask) == corner_bit) {
-          diag_point->x = ex;
-          diag_point->y = ey;
-          diag_point->orientation =
-              (ey > 0 && at(ex, ey - 1) & edge_bit)
-                  ? (ex > 0 && (at(ex - 1, ey) & edge_bit) ? 0 : 1)
-                  : (ex > 0 && (at(ex - 1, ey) & edge_bit) ? 2 : 3);
-          diag_point++;
-        }
-      }
-    }
-    diag_point->x = -1;
+  // Generate corner candidates and test placements one board row at a time.
+  constexpr uint16_t ROW_MASK = (uint16_t{1} << XSIZE) - 1;
+  uint16_t blocked_rows[YSIZE];
+  uint16_t edge_rows[YSIZE];
+  uint16_t own_rows[YSIZE];
+  for (int y = 0; y < YSIZE; y++) {
+    own_rows[y] = key_.a[player_][y] & ROW_MASK;
   }
+  for (int y = 0; y < YSIZE; y++) {
+    const uint16_t vertical =
+        (y > 0 ? own_rows[y - 1] : 0) |
+        (y + 1 < YSIZE ? own_rows[y + 1] : 0);
+    edge_rows[y] =
+        ((own_rows[y] << 1) | (own_rows[y] >> 1) | vertical) & ROW_MASK;
+    blocked_rows[y] =
+        own_rows[y] | edge_rows[y] | (key_.a[opponent()][y] & ROW_MASK);
+  }
+
+  DiagPoint diag_neighbors[100], *diag_point = diag_neighbors;
+  for (int y = 0; y < YSIZE; y++) {
+    const uint16_t vertical =
+        (y > 0 ? own_rows[y - 1] : 0) |
+        (y + 1 < YSIZE ? own_rows[y + 1] : 0);
+    uint16_t corners =
+        ((vertical << 1) | (vertical >> 1)) & ~blocked_rows[y] & ROW_MASK;
+    while (corners != 0) {
+      const int x = std::countr_zero(corners);
+      const uint16_t point = uint16_t{1} << x;
+      const bool top_edge = y > 0 && (edge_rows[y - 1] & point);
+      const bool left_edge = x > 0 && (edge_rows[y] & (point >> 1));
+      diag_point->x = x;
+      diag_point->y = y;
+      diag_point->orientation =
+          top_edge ? (left_edge ? 0 : 1) : (left_edge ? 2 : 3);
+      diag_point++;
+      corners &= corners - 1;
+    }
+  }
+  diag_point->x = -1;
 
   int nmove = 0;
   for (const Piece* piece : Game::piece_set) {
     if (!is_piece_available(player_, piece->block_id())) continue;
     if (!visitor->filter(piece->block_id() + 'a', piece->orientation(), *this))
       continue;
-    short checked[YSIZE];
-    memset(checked, 0, sizeof(checked));
+    const int min_x = -piece->minx;
+    const int max_x = XSIZE - 1 - piece->maxx;
+    const int min_y = -piece->miny;
+    const int max_y = YSIZE - 1 - piece->maxy;
+    uint16_t checked[YSIZE] = {};
     for (diag_point = diag_neighbors; diag_point->x >= 0; diag_point++) {
-      for (int i = 0; i < piece->nr_corners[diag_point->orientation]; i++) {
-        int x = diag_point->x - piece->corners[diag_point->orientation][i].x;
-        int y = diag_point->y - piece->corners[diag_point->orientation][i].y;
-        if (y + piece->miny < 0 || y + piece->maxy >= YSIZE ||
-            x + piece->minx < 0 || x + piece->maxx >= XSIZE ||
-            (checked[y] & 1 << x))
+      const int orientation = diag_point->orientation;
+      for (int i = 0; i < piece->nr_corners[orientation]; i++) {
+        const int x = diag_point->x - piece->corners[orientation][i].x;
+        const int y = diag_point->y - piece->corners[orientation][i].y;
+        if (static_cast<unsigned>(x - min_x) >
+                static_cast<unsigned>(max_x - min_x) ||
+            static_cast<unsigned>(y - min_y) >
+                static_cast<unsigned>(max_y - min_y) ||
+            (checked[y] & (uint16_t{1} << x)))
           continue;
-        checked[y] |= 1 << x;
-        if (placeable(x, y, piece)) {
+        checked[y] |= uint16_t{1} << x;
+
+        bool placeable = true;
+        const int piece_x = x + piece->minx;
+        const int piece_y = y + piece->miny;
+        const uint8_t* rows = piece_row_masks[piece->id];
+        for (int row = 0; row <= piece->maxy - piece->miny; row++) {
+          if (blocked_rows[piece_y + row] & (rows[row] << piece_x)) {
+            placeable = false;
+            break;
+          }
+        }
+        if (placeable) {
           if (!visitor->visit_move(Move(x, y, piece->id))) return false;
           nmove++;
         }

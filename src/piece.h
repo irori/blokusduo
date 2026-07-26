@@ -30,6 +30,10 @@ struct Piece {
   int orientation() const { return id & 0x7; }
 };
 
+// Five-bit rows describing each oriented piece from top to bottom.
+extern const uint8_t
+    piece_row_masks[BlokusDuoStandard::NUM_PIECES * NUM_ORIENTATIONS][5];
+
 struct Block {
   struct Rotation {
     int offset_x, offset_y;
