@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD 20)
 option(BLOKUSDUO_ENABLE_NATIVE
   "Optimize blokusduo for the CPU used to build it" ON)
 
-find_package(Python 3.8 REQUIRED Interpreter OPTIONAL_COMPONENTS Development.Module)
+find_package(Python 3.9 REQUIRED Interpreter OPTIONAL_COMPONENTS Development.Module)
 
 add_custom_command(
   OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/piece.cpp
