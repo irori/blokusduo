@@ -8,27 +8,85 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
+  native-test:
+    name: Test (${{ matrix.backend }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - backend: fallback
+            os: ubuntu-26.04
+            cxx_flags: -mno-avx2
+            build_python: "ON"
+          - backend: AVX2
+            os: ubuntu-26.04
+            cxx_flags: -mavx2
+            build_python: "OFF"
+          - backend: NEON
+            os: ubuntu-26.04-arm
+            cxx_flags: -march=armv8-a+simd
+            build_python: "OFF"
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v6
+        if: matrix.build_python == 'ON'
         with:
-          python-version: "3.9"
+          python-version: "3.10"
 
       - name: Install GoogleTest
         run: sudo apt-get update && sudo apt-get install --yes libgtest-dev
 
       - name: Install Python dependencies
+        if: matrix.build_python == 'ON'
         run: python -m pip install nanobind numpy
 
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DBUILD_PYTHON=ON
+        run: >-
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_CXX_FLAGS="${{ matrix.cxx_flags }}"
+          -DBLOKUSDUO_ENABLE_NATIVE=OFF
+          -DBUILD_PYTHON=${{ matrix.build_python }}
 
       - name: Build
         run: cmake --build build
 
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+  wasm-test:
+    name: Test (WebAssembly SIMD)
+    runs-on: ubuntu-26.04
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Emscripten and GoogleTest sources
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes emscripten libgtest-dev
+
+      - name: Build GoogleTest for WebAssembly
+        run: |
+          emcmake cmake -S /usr/src/googletest -B build-wasm-gtest \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_INSTALL_PREFIX="$PWD/build-wasm-gtest/install"
+          cmake --build build-wasm-gtest --target install
+
+      - name: Configure
+        run: |
+          emcmake cmake -S . -B build-wasm \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CROSSCOMPILING_EMULATOR=node \
+            -DGTest_DIR="$PWD/build-wasm-gtest/install/lib/cmake/GTest" \
+            -DBLOKUSDUO_ENABLE_NATIVE=OFF \
+            -DBLOKUSDUO_ENABLE_WASM_SIMD=ON
+
+      - name: Build
+        run: cmake --build build-wasm
+
+      - name: Test
+        run: ctest --test-dir build-wasm --output-on-failure
