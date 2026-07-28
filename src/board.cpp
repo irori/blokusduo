@@ -7,7 +7,7 @@
 #if defined(__AVX2__)
 #include <immintrin.h>
 #elif defined(__ARM_NEON) || defined(__wasm_simd128__)
-#include "simd128.h"
+#include <arm_neon.h>
 #endif
 
 #include "blokusduo.h"
@@ -466,124 +466,137 @@ int BoardImpl<BlokusDuoStandard>::eval_influence() const {
   }
   return influence[0] - influence[1];
 #elif defined(__ARM_NEON) || defined(__wasm_simd128__)
-  // Use the common 128-bit backend for both NEON and WebAssembly SIMD. Each
-  // 16-bit lane represents one 14-bit board row, so rows 0-7 occupy `low` and
-  // rows 8-13 occupy the first six lanes of `high`; its last two lanes are
-  // masked out. Per-lane bit shifts move horizontally, while align_right
-  // shifts whole rows and carries them between the two registers.
+  // Each 16-bit lane represents one 14-bit board row, so rows 0-7 occupy
+  // `low` and rows 8-13 occupy the first six lanes of `high`; its last two
+  // lanes are masked out. Per-lane bit shifts move horizontally, while vextq
+  // shifts whole rows and carries them between the two registers. Emscripten
+  // maps these 128-bit NEON intrinsics to WebAssembly SIMD.
   struct SimdRows {
-    simd128::U16x8 low;
-    simd128::U16x8 high;
+    uint16x8_t low;
+    uint16x8_t high;
   };
 
-  const simd128::U16x8 zeros = simd128::zero();
+  const uint16x8_t zeros = vdupq_n_u16(0);
+  uint16x8_t high_mask = vdupq_n_u16(0x3fff);
+  high_mask = vsetq_lane_u16(0, high_mask, 6);
+  high_mask = vsetq_lane_u16(0, high_mask, 7);
   const SimdRows board_mask = {
-      simd128::splat(0x3fff),
-      simd128::replace_lane<7>(
-          simd128::replace_lane<6>(simd128::splat(0x3fff), 0), 0)};
+      vdupq_n_u16(0x3fff),
+      high_mask};
 
   const auto vertical_neighbors = [zeros](const SimdRows& rows) {
-    const simd128::U16x8 previous_low =
-        simd128::align_right<7>(zeros, rows.low);
-    const simd128::U16x8 next_low =
-        simd128::align_right<1>(rows.low, rows.high);
-    const simd128::U16x8 previous_high =
-        simd128::align_right<7>(rows.low, rows.high);
-    const simd128::U16x8 next_high =
-        simd128::align_right<1>(rows.high, zeros);
-    return SimdRows{simd128::bit_or(previous_low, next_low),
-                    simd128::bit_or(previous_high, next_high)};
+    const uint16x8_t previous_low = vextq_u16(zeros, rows.low, 7);
+    const uint16x8_t next_low = vextq_u16(rows.low, rows.high, 1);
+    const uint16x8_t previous_high = vextq_u16(rows.low, rows.high, 7);
+    const uint16x8_t next_high = vextq_u16(rows.high, zeros, 1);
+    return SimdRows{vorrq_u16(previous_low, next_low),
+                    vorrq_u16(previous_high, next_high)};
   };
   const auto orthogonal_neighbors =
       [&board_mask, &vertical_neighbors](const SimdRows& rows) {
         const SimdRows vertical = vertical_neighbors(rows);
         return SimdRows{
-            simd128::bit_and(
-                simd128::bit_or(
-                    vertical.low,
-                    simd128::bit_or(simd128::shift_left<1>(rows.low),
-                                    simd128::shift_right<1>(rows.low))),
+            vandq_u16(
+                vorrq_u16(vertical.low,
+                          vorrq_u16(vshlq_n_u16(rows.low, 1),
+                                    vshrq_n_u16(rows.low, 1))),
                 board_mask.low),
-            simd128::bit_and(
-                simd128::bit_or(
-                    vertical.high,
-                    simd128::bit_or(simd128::shift_left<1>(rows.high),
-                                    simd128::shift_right<1>(rows.high))),
+            vandq_u16(
+                vorrq_u16(vertical.high,
+                          vorrq_u16(vshlq_n_u16(rows.high, 1),
+                                    vshrq_n_u16(rows.high, 1))),
                 board_mask.high)};
       };
   const auto diagonal_neighbors =
       [&board_mask, &vertical_neighbors](const SimdRows& rows) {
         const SimdRows vertical = vertical_neighbors(rows);
         return SimdRows{
-            simd128::bit_and(
-                simd128::bit_or(simd128::shift_left<1>(vertical.low),
-                                simd128::shift_right<1>(vertical.low)),
+            vandq_u16(
+                vorrq_u16(vshlq_n_u16(vertical.low, 1),
+                          vshrq_n_u16(vertical.low, 1)),
                 board_mask.low),
-            simd128::bit_and(
-                simd128::bit_or(simd128::shift_left<1>(vertical.high),
-                                simd128::shift_right<1>(vertical.high)),
+            vandq_u16(
+                vorrq_u16(vshlq_n_u16(vertical.high, 1),
+                          vshrq_n_u16(vertical.high, 1)),
                 board_mask.high)};
       };
 
   SimdRows tiles[2];
   for (int player = 0; player < 2; player++) {
-    const simd128::U16x8 first_eight = simd128::load(key_.a[player]);
+    const uint16x8_t first_eight = vld1q_u16(key_.a[player]);
     // Start at row 6 so the load stays within the 14-row array, then discard
     // its first two rows and shift zeros into the unused positions.
-    const simd128::U16x8 last_eight =
-        simd128::load(key_.a[player] + 6);
-    const simd128::U16x8 last_six =
-        simd128::align_right<2>(last_eight, zeros);
+    const uint16x8_t last_eight = vld1q_u16(key_.a[player] + 6);
+    const uint16x8_t last_six = vextq_u16(last_eight, zeros, 2);
     tiles[player] = {
-        simd128::bit_and(first_eight, board_mask.low),
-        simd128::bit_and(last_six, board_mask.high)};
+        vandq_u16(first_eight, board_mask.low),
+        vandq_u16(last_six, board_mask.high)};
   }
 
   int influence[2] = {};
   for (int player = 0; player < 2; player++) {
     const SimdRows edge = orthogonal_neighbors(tiles[player]);
     SimdRows corner = diagonal_neighbors(tiles[player]);
-    if (!simd128::any_true(
-            simd128::bit_or(tiles[player].low, tiles[player].high))) {
+    const uint64x2_t tile_words =
+        vreinterpretq_u64_u16(vorrq_u16(tiles[player].low,
+                                        tiles[player].high));
+    if ((vgetq_lane_u64(tile_words, 0) |
+         vgetq_lane_u64(tile_words, 1)) == 0) {
       if (player == 0) {
-        corner.low =
-            simd128::or_lane<4>(corner.low, uint16_t{1} << 4);
+        corner.low = vsetq_lane_u16(
+            vgetq_lane_u16(corner.low, 4) | (uint16_t{1} << 4),
+            corner.low, 4);
       } else {
-        corner.high =
-            simd128::or_lane<1>(corner.high, uint16_t{1} << 9);
+        corner.high = vsetq_lane_u16(
+            vgetq_lane_u16(corner.high, 1) | (uint16_t{1} << 9),
+            corner.high, 1);
       }
     }
 
     const SimdRows blocked_without_corner = {
-        simd128::bit_or(
-            simd128::bit_or(tiles[player].low, edge.low),
-            tiles[1 - player].low),
-        simd128::bit_or(
-            simd128::bit_or(tiles[player].high, edge.high),
-            tiles[1 - player].high)};
+        vorrq_u16(vorrq_u16(tiles[player].low, edge.low),
+                  tiles[1 - player].low),
+        vorrq_u16(vorrq_u16(tiles[player].high, edge.high),
+                  tiles[1 - player].high)};
     const SimdRows blocked = {
-        simd128::bit_or(blocked_without_corner.low, corner.low),
-        simd128::bit_or(blocked_without_corner.high, corner.high)};
+        vorrq_u16(blocked_without_corner.low, corner.low),
+        vorrq_u16(blocked_without_corner.high, corner.high)};
     SimdRows frontier = {
-        simd128::and_not(corner.low, blocked_without_corner.low),
-        simd128::and_not(corner.high, blocked_without_corner.high)};
+        vbicq_u16(corner.low, blocked_without_corner.low),
+        vbicq_u16(corner.high, blocked_without_corner.high)};
     SimdRows reached = frontier;
     const SimdRows traversable = {
-        simd128::and_not(board_mask.low, blocked.low),
-        simd128::and_not(board_mask.high, blocked.high)};
+        vbicq_u16(board_mask.low, blocked.low),
+        vbicq_u16(board_mask.high, blocked.high)};
 
     for (int distance = 0; distance < 3; distance++) {
       const SimdRows adjacent = orthogonal_neighbors(frontier);
       frontier = {
-          simd128::and_not(
-              simd128::bit_and(adjacent.low, traversable.low), reached.low),
-          simd128::and_not(
-              simd128::bit_and(adjacent.high, traversable.high), reached.high)};
-      reached = {simd128::bit_or(reached.low, frontier.low),
-                 simd128::bit_or(reached.high, frontier.high)};
+          vbicq_u16(vandq_u16(adjacent.low, traversable.low), reached.low),
+          vbicq_u16(vandq_u16(adjacent.high, traversable.high), reached.high)};
+      reached = {vorrq_u16(reached.low, frontier.low),
+                 vorrq_u16(reached.high, frontier.high)};
     }
 
-    influence[player] = simd128::popcount_sum(reached.low, reached.high);
+    // Emscripten's NEON compatibility implementation scalarizes vcntq_u8.
+    // Clang's elementwise popcount builtin lowers to the same native NEON
+    // instruction and directly to i8x16.popcnt in WebAssembly.
+#if defined(__clang__)
+    const uint8x16_t byte_counts = vaddq_u8(
+        __builtin_elementwise_popcount(
+            vreinterpretq_u8_u16(reached.low)),
+        __builtin_elementwise_popcount(
+            vreinterpretq_u8_u16(reached.high)));
+#else
+    const uint8x16_t byte_counts = vaddq_u8(
+        vcntq_u8(vreinterpretq_u8_u16(reached.low)),
+        vcntq_u8(vreinterpretq_u8_u16(reached.high)));
+#endif
+    const uint16x8_t pair_counts = vpaddlq_u8(byte_counts);
+    const uint32x4_t quad_counts = vpaddlq_u16(pair_counts);
+    const uint64x2_t half_counts = vpaddlq_u32(quad_counts);
+    influence[player] = vgetq_lane_u64(half_counts, 0) +
+                        vgetq_lane_u64(half_counts, 1);
   }
   return influence[0] - influence[1];
 #else

@@ -60,8 +60,8 @@ cmake -B build -S . \
 
 For an Emscripten build using
 [WebAssembly fixed-width SIMD (SIMD128)](https://emscripten.org/docs/porting/simd.html),
-enable `BLOKUSDUO_ENABLE_WASM_SIMD`. This option adds `-msimd128`. The
-resulting module requires a runtime with fixed-width SIMD support:
+enable `BLOKUSDUO_ENABLE_WASM_SIMD`. The resulting module requires a runtime
+with fixed-width SIMD support:
 
 ```bash
 emcmake cmake -B build-wasm -S . \

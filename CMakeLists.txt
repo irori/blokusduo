@@ -29,7 +29,7 @@ if(BLOKUSDUO_ENABLE_WASM_SIMD)
     message(FATAL_ERROR
       "BLOKUSDUO_ENABLE_WASM_SIMD requires the Emscripten toolchain")
   endif()
-  target_compile_options(blokusduo PUBLIC "-msimd128")
+  target_compile_options(blokusduo PUBLIC "-msimd128" "-mfpu=neon")
   target_link_options(blokusduo INTERFACE "-msimd128")
 endif()
 
