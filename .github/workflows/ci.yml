@@ -64,10 +64,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install Emscripten and GoogleTest sources
+      - name: Install GoogleTest sources
         run: |
           sudo apt-get update
-          sudo apt-get install --yes emscripten libgtest-dev
+          sudo apt-get install --yes libgtest-dev
+
+      - name: Set up Emscripten
+        uses: emscripten-core/setup-emsdk@v16
 
       - name: Build GoogleTest for WebAssembly
         run: |
