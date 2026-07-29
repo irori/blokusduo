@@ -6,6 +6,7 @@
 #include <array>
 #include <cmath>
 #include <memory>
+#include <random>
 #include <unordered_map>
 #include <vector>
 
@@ -246,11 +247,110 @@ int negascout_rec(const BoardImpl<Game>& node, int depth, int alpha, int beta,
   return score_max;
 }
 
+template <class Game>
+int negascout_root(
+    const BoardImpl<Game>& node, int depth,
+    const std::unordered_map<Move, double, Move::Hash>* noise, Move* best_move,
+    Hash<Game>* hash, Hash<Game>* prev_hash) {
+  const auto move_noise = [&noise](Move move) {
+    if (!noise) return 0.0;
+    const auto found = noise->find(move);
+    assert(found != noise->end());
+    return found->second;
+  };
+  ChildCollector<Game> collector(node, prev_hash + 1, true);
+  node.visit_moves(&collector);
+  std::vector<Child<Game>> children = std::move(collector.children);
+  std::vector<Child<Game>*> ordered_children;
+  ordered_children.reserve(children.size());
+  for (Child<Game>& child : children) ordered_children.push_back(&child);
+  std::sort(
+      ordered_children.begin(), ordered_children.end(),
+      [&move_noise](const Child<Game>* lhs, const Child<Game>* rhs) {
+        const double score_difference =
+            static_cast<double>(lhs->score) - rhs->score;
+        const double noise_difference =
+            move_noise(lhs->move) - move_noise(rhs->move);
+        return score_difference < noise_difference;
+      });
+
+  bool found_best = false;
+  double best_bonus = 0;
+  int best_score = -INT_MAX;
+
+  for (const Child<Game>* child : ordered_children) {
+    const double bonus = move_noise(child->move);
+    int score;
+
+    if (!found_best) {
+      score = -negascout_rec(child->board, depth - 1, -INT_MAX, INT_MAX,
+                             nullptr, hash + 1, prev_hash + 1, 7);
+    } else {
+      const double required =
+          best_score + std::floor(best_bonus - bonus) + 1;
+      if (required > INT_MAX) continue;
+
+      if (required <= -INT_MAX + 1) {
+        score = -negascout_rec(child->board, depth - 1, -INT_MAX, INT_MAX,
+                               nullptr, hash + 1, prev_hash + 1, 7);
+      } else {
+        const int threshold = static_cast<int>(required);
+        score = -negascout_rec(child->board, depth - 1, -threshold,
+                               1 - threshold, nullptr, hash + 1, prev_hash + 1,
+                               7);
+        if (score < threshold) continue;
+        score = -negascout_rec(child->board, depth - 1, -INT_MAX, -score,
+                               nullptr, hash + 1, prev_hash + 1, 7);
+      }
+    }
+
+    const double score_difference =
+        static_cast<double>(score) - best_score;
+    if (!found_best || score_difference > best_bonus - bonus) {
+      found_best = true;
+      best_bonus = bonus;
+      best_score = score;
+      *best_move = child->move;
+    }
+  }
+  return best_score;
+}
+
 }  // namespace
 
 template <class Game>
 SearchResult negascout(const BoardImpl<Game>& node, int max_depth,
                        std::function<bool(int, SearchResult)> callback) {
+  return negascout_gumbel(node, max_depth, 0, 0, std::move(callback));
+}
+template SearchResult negascout<BlokusDuoMini>(
+    const BoardImpl<BlokusDuoMini>& node, int max_depth,
+    std::function<bool(int, SearchResult)> callback);
+template SearchResult negascout<BlokusDuoStandard>(
+    const BoardImpl<BlokusDuoStandard>& node, int max_depth,
+    std::function<bool(int, SearchResult)> callback);
+
+template <class Game>
+SearchResult negascout_gumbel(
+    const BoardImpl<Game>& node, int max_depth, double temperature,
+    uint64_t seed, std::function<bool(int, SearchResult)> callback) {
+  assert(max_depth >= 2);
+  assert(std::isfinite(temperature));
+  assert(temperature >= 0);
+
+  std::unordered_map<Move, double, Move::Hash> noise;
+  const std::unordered_map<Move, double, Move::Hash>* noise_ptr = nullptr;
+  if (temperature > 0) {
+    std::mt19937_64 random(seed);
+    for (Move move : node.valid_moves()) {
+      constexpr double SCALE = 1.0 / 9007199254740992.0;
+      const double uniform =
+          (static_cast<double>(random() >> 11) + 0.5) * SCALE;
+      noise.emplace(move, -temperature * std::log(-std::log(uniform)));
+    }
+    noise_ptr = &noise;
+  }
+
   Move best_move;
   int score;
 
@@ -260,23 +360,23 @@ SearchResult negascout(const BoardImpl<Game>& node, int max_depth,
   printf("1> ? ???? (%d)\n", score);
 #endif
 
-  std::unique_ptr<Hash<Game>[]> hash, prev_hash;
-  prev_hash = std::make_unique<Hash<Game>[]>(max_depth);
-  for (int i = 2; i <= max_depth; i++) {
+  std::unique_ptr<Hash<Game>[]> hash;
+  auto previous_hash = std::make_unique<Hash<Game>[]>(max_depth);
+  for (int depth = 2; depth <= max_depth; depth++) {
     hash = std::make_unique<Hash<Game>[]>(max_depth);
-    score = negascout_rec(node, i, -INT_MAX, INT_MAX, &best_move, hash.get(),
-                          prev_hash.get(), 8);
-    prev_hash = std::move(hash);
-    if (!callback(i, SearchResult(best_move, score))) break;
+    score = negascout_root(node, depth, noise_ptr, &best_move, hash.get(),
+                           previous_hash.get());
+    previous_hash = std::move(hash);
+    if (!callback(depth, SearchResult(best_move, score))) break;
   }
-
   return SearchResult(best_move, score);
 }
-template SearchResult negascout<BlokusDuoMini>(
-    const BoardImpl<BlokusDuoMini>& node, int max_depth,
-    std::function<bool(int, SearchResult)> callback);
-template SearchResult negascout<BlokusDuoStandard>(
+template SearchResult negascout_gumbel<BlokusDuoMini>(
+    const BoardImpl<BlokusDuoMini>& node, int max_depth, double temperature,
+    uint64_t seed, std::function<bool(int, SearchResult)> callback);
+template SearchResult negascout_gumbel<BlokusDuoStandard>(
     const BoardImpl<BlokusDuoStandard>& node, int max_depth,
+    double temperature, uint64_t seed,
     std::function<bool(int, SearchResult)> callback);
 
 template <class Game>

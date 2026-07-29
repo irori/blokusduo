@@ -247,6 +247,7 @@ negative is unfavorable.
 | C++ | Python | Recommended use | Returned value |
 | --- | --- | --- | --- |
 | `search::negascout(board, max_depth, callback)` | `search_negascout(board, max_depth, callback)` | Opening and middlegame | Heuristic value at the search horizon |
+| `search::negascout_gumbel(board, max_depth, temperature, seed, callback)` | `search_negascout_gumbel(board, max_depth, temperature, seed, callback)` | Randomized opening and middlegame play | Heuristic value at the search horizon |
 | `search::wld(board)` | `search_wld(board)` | Late endgame | Positive for a win, zero for a draw, negative for a loss |
 | `search::perfect(board)` | `search_perfect(board)` | Final endgame | Exact final placed-tile difference |
 
@@ -286,6 +287,23 @@ auto [move, value] = blokusduo::search::negascout(
 The callback is invoked only between completed iterations. It cannot interrupt
 an iteration already in progress, so it provides a soft rather than a strict
 time limit.
+
+`negascout_gumbel()` adds Gumbel noise to the root-move scores.
+`temperature` controls the amount of variation in evaluation score units; at
+a completed depth, moves are sampled in proportion to
+`exp(score / temperature)`. Zero is identical to `negascout()`. Using the same
+`seed` makes the result reproducible. The returned value is the selected move's
+original score, without noise.
+
+As a rough guide, use `0.5` for subtle variation, `1.0` for mild randomness,
+and `2.0` for more visible variety. At `4.0` or higher, substantially weaker
+moves may be selected.
+
+```cpp
+auto [move, value] = blokusduo::search::negascout_gumbel(
+    board, 8, 1.5, seed,
+    [](int, blokusduo::search::SearchResult) { return true; });
+```
 
 ### Win/loss/draw and perfect searches
 

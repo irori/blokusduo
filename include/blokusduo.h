@@ -276,6 +276,14 @@ template <class Game>
 SearchResult negascout(const BoardImpl<Game>& node, int max_depth,
                        std::function<bool(int, SearchResult)> callback);
 
+// Performs NegaScout after adding Gumbel noise to each move at the root.
+// `temperature` is expressed in evaluation-score units. `seed` makes the
+// randomized choice reproducible. The returned score does not include noise.
+template <class Game>
+SearchResult negascout_gumbel(
+    const BoardImpl<Game>& node, int max_depth, double temperature,
+    uint64_t seed, std::function<bool(int, SearchResult)> callback);
+
 // Performs a win-loss-draw (WLD) search on the given game board node.
 template <class Game>
 SearchResult wld(const BoardImpl<Game>& node);

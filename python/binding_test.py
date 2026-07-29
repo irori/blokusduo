@@ -36,6 +36,20 @@ class BoardTest(unittest.TestCase):
                 game.NUM_PIECES - 1, board.available_pieces()[0].sum()
             )
 
+    def test_gumbel_search_is_reproducible(self):
+        board = blokusduo.mini.Board()
+        callback = lambda depth, result: True
+        result = blokusduo.mini.search_negascout_gumbel(
+            board, 3, 4.0, 1234, callback
+        )
+        self.assertEqual(
+            result,
+            blokusduo.mini.search_negascout_gumbel(
+                board, 3, 4.0, 1234, callback
+            ),
+        )
+        self.assertTrue(board.is_valid_move(result[0]))
+
 
 if __name__ == "__main__":
     unittest.main()

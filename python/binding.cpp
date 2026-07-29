@@ -82,6 +82,8 @@ void define_blokusduo_module(nb::module_&& m) {
       .def_static("all_possible_moves", &BoardImpl<Game>::all_possible_moves)
       .def_static("rotate_move", &BoardImpl<Game>::rotate_move);
   m.def("search_negascout", &blokusduo::search::negascout<Game>);
+  m.def("search_negascout_gumbel",
+        &blokusduo::search::negascout_gumbel<Game>);
   m.def("search_wld", &blokusduo::search::wld<Game>);
   m.def("search_perfect", &blokusduo::search::perfect<Game>);
 }
